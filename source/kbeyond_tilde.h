@@ -8,7 +8,7 @@
 // Inlets:  2 (signal L/R)
 // Outlets: 2 (signal L/R)
 // Attributes (0..1 unless specified):
-//   @regen, @derez, @filter, @early, @predelay (seconds), @mix,
+//   @regen, @derez, @filter, @early, @predelay (0..0.5 seconds), @mix,
 //   @width(0..2), @size(0..1), @color(-1..+1), @modrate(Hz), @moddepth(samples),
 //   @phiweight(0..1)
 // Notes:
@@ -112,6 +112,9 @@ struct OnePoleLP {
 
 // ------------------------------- Main object
 struct t_kbeyond {
+    static constexpr double kPredelayMaxSeconds = 0.5;
+    static constexpr double kPredelaySafetySamples = 16.0;
+
     t_pxobject      ob;
 
     // Parameters
