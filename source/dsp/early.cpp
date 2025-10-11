@@ -136,6 +136,7 @@ void EarlySection::setup(double sr,
             gain *= scaleEnergy;
     }
 
+#if KBEYOND_ENABLE_LASER
     const double focusNorm = clampd(focus, 0.0, 1.0);
     const double baseLaser = lerp(6.5, 17.5, size);
     const double groupSpacing = lerp(3.0, 9.5, size);
@@ -187,22 +188,35 @@ void EarlySection::setup(double sr,
         laserCos_[static_cast<std::size_t>(idx)] = std::cos(theta);
         laserSin_[static_cast<std::size_t>(idx)] = std::sin(theta);
     }
+#else
+    (void)laserMidPattern;
+    (void)laserSidePattern;
+#endif
 }
 
 void EarlySection::resetState() {
+#if KBEYOND_ENABLE_LASER
     laserEnv_ = 0.0;
     laserExcite_ = 0.0;
     qswitchEnv_ = 0.0;
     qswitchCounter_ = 0;
     laserPhase_ = 0.0;
+#else
+    laserExcite_ = 0.0;
+#endif
 }
 
 void EarlySection::updateGate(double gate) {
+#if KBEYOND_ENABLE_LASER
     const double g = clampd(gate, 0.0, 1.0);
     laserGateScaled_ = 0.004 + 0.25 * g * g;
+#else
+    (void)gate;
+#endif
 }
 
 void EarlySection::updateWindow(double windowSeconds, double sr) {
+#if KBEYOND_ENABLE_LASER
     sampleRate_ = sr;
     const double winSec = clampd(windowSeconds, 0.2, 0.6);
     qswitchWindowSamples_ = static_cast<long>(std::llround(winSec * sr));
@@ -210,16 +224,26 @@ void EarlySection::updateWindow(double windowSeconds, double sr) {
         qswitchWindowSamples_ = 1;
     if (qswitchCounter_ > qswitchWindowSamples_)
         qswitchCounter_ = qswitchWindowSamples_;
+#else
+    (void)windowSeconds;
+    sampleRate_ = sr;
+#endif
 }
 
 void EarlySection::updatePhaseIncrement(double focus, double sr) {
+#if KBEYOND_ENABLE_LASER
     sampleRate_ = sr;
     const double focusNorm = clampd(focus, 0.0, 1.0);
     const double sweepHz = lerp(0.5, 7.0, focusNorm);
     laserPhaseInc_ = 2.0 * M_PI * sweepHz / std::max(1.0, sr);
+#else
+    (void)focus;
+    sampleRate_ = sr;
+#endif
 }
 
 void EarlySection::updateEnvelopeCoefficients(double sr) {
+#if KBEYOND_ENABLE_LASER
     sampleRate_ = sr;
     const double attackTime = 0.0035;
     const double releaseTime = 0.12;
@@ -229,17 +253,20 @@ void EarlySection::updateEnvelopeCoefficients(double sr) {
     const double qReleaseTime = 0.24;
     qswitchAttack_ = std::exp(-1.0 / std::max(1.0, sr * qAttackTime));
     qswitchRelease_ = std::exp(-1.0 / std::max(1.0, sr * qReleaseTime));
+#else
+    sampleRate_ = sr;
+#endif
 }
 
 void EarlySection::render(double inL,
-                          double inR,
-                          double widthNorm,
-                          double earlyAmt,
-                          double focusAmt,
-                          double clusterAmt,
-                          double &earlyL,
-                          double &earlyR,
-                          uint32_t &rng) {
+                double inR,
+                double widthNorm,
+                double earlyAmt,
+                double focusAmt,
+                double clusterAmt,
+                double &earlyL,
+                double &earlyR,
+                uint32_t &rng) {
     widthNorm = clampd(widthNorm, 0.0, 2.0);
     const double spreadNorm = clampd(earlyAmt, 0.0, 1.0);
     const double focusNorm = clampd(focusAmt, 0.0, 1.0);
@@ -249,13 +276,6 @@ void EarlySection::render(double inL,
     const double wCross = lerp(0.0, wCrossBase, spreadNorm);
     const double midIn = 0.5 * (inL + inR);
     const double sideIn = 0.5 * (inL - inR);
-    const double detector = std::max(std::fabs(midIn), std::fabs(sideIn));
-    const double envCoef = (detector > laserEnv_) ? laserEnvAttack_ : laserEnvRelease_;
-    laserEnv_ = lerp(detector, laserEnv_, envCoef);
-    const double gateBase = clampd((laserEnv_ - laserGateScaled_) / 0.3, 0.0, 1.0);
-    const double clusterGate = std::sqrt(gateBase);
-    const double focusGate = clusterGate * focusNorm;
-    laserExcite_ = focusGate;
 
     earlyBufMid_.write(midIn + tiny_noise(rng));
     earlyBufSide_.write(sideIn + tiny_noise(rng));
@@ -280,6 +300,15 @@ void EarlySection::render(double inL,
         left += wMain * mixL + wCross * mixR;
         right += wCross * mixL + wMain * mixR;
     }
+
+#if KBEYOND_ENABLE_LASER
+    const double detector = std::max(std::fabs(midIn), std::fabs(sideIn));
+    const double envCoef = (detector > laserEnv_) ? laserEnvAttack_ : laserEnvRelease_;
+    laserEnv_ = lerp(detector, laserEnv_, envCoef);
+    const double gateBase = clampd((laserEnv_ - laserGateScaled_) / 0.3, 0.0, 1.0);
+    const double clusterGate = std::sqrt(gateBase);
+    const double focusGate = clusterGate * focusNorm;
+    laserExcite_ = focusGate;
 
     const double clusterAmount = clampd(clusterAmt, 0.0, 1.0);
     if (clusterAmount > 0.0) {
@@ -320,6 +349,10 @@ void EarlySection::render(double inL,
         if (laserPhase_ >= 2.0 * M_PI)
             laserPhase_ -= 2.0 * M_PI;
     }
+#else
+    (void)clusterAmt;
+    laserExcite_ = 0.0;
+#endif
 
     if (spreadNorm < 1.0) {
         const double center = 0.5 * (left + right);
@@ -332,6 +365,7 @@ void EarlySection::render(double inL,
     earlyR = right * focusNorm;
 }
 
+#if KBEYOND_ENABLE_LASER
 double EarlySection::computeQSwitchMix(double clusterAmt, double diffusion) {
     const double qTarget = laserExcite_ * clampd(clusterAmt, 0.0, 1.0);
     if (qswitchWindowSamples_ > 0 && diffusion > 0.0) {
@@ -358,6 +392,13 @@ double EarlySection::computeQSwitchMix(double clusterAmt, double diffusion) {
     }
     return qMix;
 }
+#else
+double EarlySection::computeQSwitchMix(double clusterAmt, double diffusion) {
+    (void)clusterAmt;
+    (void)diffusion;
+    return 0.0;
+}
+#endif
 
 } // namespace kbeyond::dsp
 

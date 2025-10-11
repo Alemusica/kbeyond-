@@ -47,6 +47,10 @@ using t_max_err = int;
 #include <cstdint>
 #include <algorithm>
 
+#ifndef KBEYOND_ENABLE_LASER
+#define KBEYOND_ENABLE_LASER 0
+#endif
+
 #include "dsp/prime_modes.h"
 #include "dsp/params.h"
 #include "dsp/buffers.h"

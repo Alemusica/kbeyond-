@@ -56,6 +56,7 @@ private:
     std::array<double, kEarlyTaps> earlyCos_{};
     std::array<double, kEarlyTaps> earlySin_{};
 
+#if KBEYOND_ENABLE_LASER
     std::array<double, kLaserTaps> laserDelay_{};
     std::array<double, kLaserTaps> laserMidGain_{};
     std::array<double, kLaserTaps> laserSideGain_{};
@@ -75,6 +76,9 @@ private:
     double qswitchRelease_ = 0.0;
     long qswitchWindowSamples_ = 0;
     long qswitchCounter_ = 0;
+#else
+    double laserExcite_ = 0.0;
+#endif
     double sampleRate_ = 48000.0;
 };
 
