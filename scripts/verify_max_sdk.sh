@@ -43,6 +43,22 @@ for candidate in "${C74_CANDIDATES[@]}"; do
     fi
 done
 
+# Some Max SDK distributions (especially development snapshots) may use a
+# slightly different directory layout. As a fallback, search for a folder that
+# contains `c74support/max-includes/ext.h` anywhere under the provided SDK
+# root. This keeps backwards compatibility with the explicit checks above while
+# still helping users that simply cloned the official Git repository.
+if [[ -z "${C74SUPPORT}" ]]; then
+    while IFS= read -r -d '' ext_header; do
+        candidate=$(dirname "$(dirname "${ext_header}")")
+        if [[ -d "${candidate}" ]]; then
+            C74SUPPORT="${candidate}"
+            break
+        fi
+    done < <(find "${SDK_PATH}" -maxdepth 6 -type f -name ext.h \
+        -path '*/c74support/max-includes/ext.h' -print0 2>/dev/null)
+fi
+
 if [[ -z "${C74SUPPORT}" ]]; then
     cat >&2 <<'HINT'
 ERROR: Unable to locate the c74support folder inside the supplied Max SDK path.
