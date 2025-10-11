@@ -11,16 +11,43 @@ if (NOT DEFINED MAX_SDK_ROOT)
 endif()
 
 # --- Supporta entrambi i layout (max-sdk e max-sdk-base) ---
-if (EXISTS "${MAX_SDK_ROOT}/max-sdk-base/c74support/max-includes/ext.h")
-  set(C74SUPPORT "${MAX_SDK_ROOT}/max-sdk-base/c74support")
-elseif (EXISTS "${MAX_SDK_ROOT}/source/max-sdk-base/c74support/max-includes/ext.h")
-  set(C74SUPPORT "${MAX_SDK_ROOT}/source/max-sdk-base/c74support")
-elseif (EXISTS "${MAX_SDK_ROOT}/source/c74support/max-includes/ext.h")
-  set(C74SUPPORT "${MAX_SDK_ROOT}/source/c74support")
-elseif (EXISTS "${MAX_SDK_ROOT}/c74support/max-includes/ext.h")
-  set(C74SUPPORT "${MAX_SDK_ROOT}/c74support")
-else()
-  message(FATAL_ERROR "ext.h non trovato sotto ${MAX_SDK_ROOT}")
+set(_c74_candidates
+  "${MAX_SDK_ROOT}/max-sdk-base/c74support"
+  "${MAX_SDK_ROOT}/source/max-sdk-base/c74support"
+  "${MAX_SDK_ROOT}/source/c74support"
+  "${MAX_SDK_ROOT}/c74support"
+)
+
+set(C74SUPPORT "")
+foreach(candidate IN LISTS _c74_candidates)
+  if (EXISTS "${candidate}/max-includes/ext.h")
+    set(C74SUPPORT "${candidate}")
+    break()
+  endif()
+endforeach()
+
+# Alcune snapshot del Max SDK (in particolare i checkout git) possono usare
+# layout leggermente diversi. Come fallback cerchiamo qualsiasi percorso che
+# contenga `c74support/max-includes/ext.h` al suo interno.
+if (NOT C74SUPPORT)
+  file(GLOB_RECURSE _ext_h_paths LIST_DIRECTORIES FALSE
+    "${MAX_SDK_ROOT}/*.h")
+  foreach(_ext_h IN LISTS _ext_h_paths)
+    if (_ext_h MATCHES "/c74support/max-includes/ext\\.h$")
+      list(APPEND _c74support_hits "${_ext_h}")
+    endif()
+  endforeach()
+  list(LENGTH _c74support_hits _ext_count)
+  if (_ext_count GREATER 0)
+    list(SORT _c74support_hits)
+    list(GET _c74support_hits 0 _ext_h)
+    get_filename_component(_max_includes "${_ext_h}" DIRECTORY)
+    get_filename_component(C74SUPPORT "${_max_includes}" DIRECTORY)
+  endif()
+endif()
+
+if (NOT C74SUPPORT)
+  message(FATAL_ERROR "ext.h non trovato sotto ${MAX_SDK_ROOT}. Verifica che il Max SDK sia stato installato correttamente.")
 endif()
 
 if (NOT EXISTS "${C74SUPPORT}/msp-includes/z_dsp.h")
