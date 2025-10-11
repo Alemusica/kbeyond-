@@ -48,6 +48,12 @@ void t_kbeyond::setup_sr(double newsr) {
     update_output_weights();
     update_modulators();
     update_quantum_walk();
+    motionDetector.setSampleRate(sr);
+    motionDetector.reset();
+    rangeEnv = motionDetector.range();
+    dopplerEnv = motionDetector.doppler();
+    spreadEnv = motionDetector.spread();
+    apply_width(clampd(width, 0.0, 2.0));
 }
 
 std::vector<double> t_kbeyond::make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const {
@@ -84,6 +90,27 @@ void t_kbeyond::setup_early() {
     earlySection.setup(sr, size, laserFocus, tapPattern, laserMidPattern, laserSidePattern);
     earlySection.resetState();
 }
+
+#ifdef KBEYOND_UNIT_TEST
+void t_kbeyond::render_early(double inL,
+                             double inR,
+                             double widthValue,
+                             double earlyAmt,
+                             double focusAmt,
+                             double &outL,
+                             double &outR) {
+    double clusterAmt = clampd(laser, 0.0, 1.0);
+    earlySection.render(inL,
+                        inR,
+                        clampd(widthValue, 0.0, 2.0),
+                        clampd(earlyAmt, 0.0, 1.0),
+                        clampd(focusAmt, 0.0, 1.0),
+                        clusterAmt,
+                        outL,
+                        outR,
+                        rng);
+}
+#endif
 
 void t_kbeyond::update_laser_gate() {
     earlySection.updateGate(laserGate);
@@ -138,22 +165,13 @@ void t_kbeyond::update_diffusion() {
     make_phi_vector<N>(u, clampd(phiweight, 0.0, 1.0));
 }
 
-void t_kbeyond::update_output_weights() {
-    double widthNorm = clampd(width, 0.0, 2.0);
-    auto midPattern = make_pattern(modeMid, N, 0x4001u);
-    auto sidePattern = make_pattern(modeSide, N, 0x4002u);
+void t_kbeyond::apply_width(double widthNorm) {
+    widthNorm = clampd(widthNorm, 0.0, 2.0);
     double normL = 0.0;
     double normR = 0.0;
     for (int i = 0; i < N; ++i) {
-        double angle = (2.0 * M_PI * (double)i) / (double)N;
-        double l = std::sin(angle * 0.91 + 0.17);
-        double r = std::cos(angle * 1.07 - 0.11);
-        double midScale = (i < (int)midPattern.size()) ? lerp(0.6, 1.4, midPattern[(std::size_t)i]) : 1.0;
-        double sideScale = (i < (int)sidePattern.size()) ? lerp(0.6, 1.4, sidePattern[(std::size_t)i]) : 1.0;
-        double mid = 0.5 * (l + r) * midScale;
-        double side = 0.5 * (l - r) * sideScale;
-        outBaseMid[i] = mid;
-        outBaseSide[i] = side;
+        double mid = outBaseMid[i];
+        double side = outBaseSide[i];
         double wL = mid + widthNorm * side;
         double wR = mid - widthNorm * side;
         outWeightsL[i] = wL;
@@ -167,6 +185,23 @@ void t_kbeyond::update_output_weights() {
         outWeightsL[i] *= scaleL;
         outWeightsR[i] *= scaleR;
     }
+}
+
+void t_kbeyond::update_output_weights() {
+    auto midPattern = make_pattern(modeMid, N, 0x4001u);
+    auto sidePattern = make_pattern(modeSide, N, 0x4002u);
+    for (int i = 0; i < N; ++i) {
+        double angle = (2.0 * M_PI * (double)i) / (double)N;
+        double l = std::sin(angle * 0.91 + 0.17);
+        double r = std::cos(angle * 1.07 - 0.11);
+        double midScale = (i < (int)midPattern.size()) ? lerp(0.6, 1.4, midPattern[(std::size_t)i]) : 1.0;
+        double sideScale = (i < (int)sidePattern.size()) ? lerp(0.6, 1.4, sidePattern[(std::size_t)i]) : 1.0;
+        double mid = 0.5 * (l + r) * midScale;
+        double side = 0.5 * (l - r) * sideScale;
+        outBaseMid[i] = mid;
+        outBaseSide[i] = side;
+    }
+    apply_width(clampd(width, 0.0, 2.0));
 }
 
 void t_kbeyond::update_modulators() {
@@ -321,6 +356,10 @@ t_max_err kbeyond_attr_set_moddepth(t_kbeyond* x, void* attr, long argc, t_atom*
     if (!err)
         x->update_modulators();
     return err;
+}
+
+t_max_err kbeyond_attr_set_motion(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->motion, 0.0, 1.0, nullptr);
 }
 
 t_max_err kbeyond_attr_set_phiweight(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
@@ -673,11 +712,39 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
     double *outL = (nout > 0 && outs[0]) ? outs[0] : nullptr;
     double *outR = (nout > 1 && outs[1]) ? outs[1] : nullptr;
 
-    double widthNorm = clampd(x->width, 0.0, 2.0);
+    double motionAmt = clampd(x->motion, 0.0, 1.0);
+    double rangeEnv = clampd(x->rangeEnv, 0.0, 1.0);
+    double dopplerEnv = clampd(x->dopplerEnv, 0.0, 1.0);
+    double spreadEnv = clampd(x->spreadEnv, 0.0, 1.0);
+
+    double baseWidth = clampd(x->width, 0.0, 2.0);
+    double rangeLift = std::max(rangeEnv - 0.35, 0.0);
+    double widthDelta = motionAmt * (0.45 * rangeLift + 0.35 * (spreadEnv - 0.5) * rangeEnv);
+    double widthNorm = clampd(baseWidth + widthDelta, 0.0, 2.0);
+    x->apply_width(widthNorm);
+
     double mix = clampd(x->mix, 0.0, 1.0);
     double earlyAmt = clampd(x->early, 0.0, 1.0);
     double focusAmt = clampd(x->focus, 0.0, 1.0);
-    double moddepth = clampd(x->moddepth, 0.0, 32.0);
+
+    double baseModDepth = clampd(x->moddepth, 0.0, 32.0);
+    double moddepth = clampd(baseModDepth * (1.0 + motionAmt * 0.65 * dopplerEnv), 0.0, 32.0);
+
+    double dampBoost = std::max(rangeEnv - 0.3, 0.0);
+    double dampMFNormBase = clampd(x->dampMF, 0.0, 1.0);
+    double dampHFNormBase = clampd(x->dampHF, 0.0, 1.0);
+    double dampMFNorm = clampd(dampMFNormBase + motionAmt * 0.55 * dampBoost, 0.0, 1.0);
+    double dampHFNorm = clampd(dampHFNormBase + motionAmt * (0.45 * dampBoost + 0.55 * dopplerEnv), 0.0, 1.0);
+    double dampLFValue = x->decayState.dampLF;
+    double dampMFValue = lerp(1.0, 0.45, dampMFNorm);
+    double dampHFValue = lerp(1.0, 0.12, dampHFNorm);
+
+#ifdef KBEYOND_UNIT_TEST
+    x->debugWidthTarget = widthNorm;
+    x->debugModDepthTarget = moddepth;
+    x->debugDampMFValue = dampMFValue;
+    x->debugDampHFValue = dampHFValue;
+#endif
 
     for (long i = 0; i < sampleframes; ++i) {
         double inL = (nin > 0 && ins[0]) ? ins[0][i] : 0.0;
@@ -694,6 +761,8 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
 
         double midIn = 0.5 * (predOutL + predOutR);
         double sideIn = 0.5 * (predOutL - predOutR);
+
+        x->motionDetector.process(midIn, sideIn);
 
         double earlyL = 0.0;
         double earlyR = 0.0;
@@ -740,9 +809,9 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
                                      x->decayState.perLine,
                                      x->fdn_low,
                                      x->fdn_high,
-                                     x->decayState.dampLF,
-                                     x->decayState.dampMF,
-                                     x->decayState.dampHF,
+                                     dampLFValue,
+                                     dampMFValue,
+                                     dampHFValue,
                                      tailL,
                                      tailR);
 
@@ -754,6 +823,10 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         if (outR)
             outR[i] = lerp(dryR, wetR, mix);
     }
+
+    x->rangeEnv = clampd(x->motionDetector.range(), 0.0, 1.0);
+    x->dopplerEnv = clampd(x->motionDetector.doppler(), 0.0, 1.0);
+    x->spreadEnv = clampd(x->motionDetector.spread(), 0.0, 1.0);
 }
 
 extern "C" C74_EXPORT void ext_main(void *r) {
@@ -825,6 +898,10 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "moddepth", 0, t_kbeyond, moddepth);
     CLASS_ATTR_ACCESSORS(c, "moddepth", NULL, kbeyond_attr_set_moddepth);
     CLASS_ATTR_FILTER_CLIP(c, "moddepth", 0.0, 32.0);
+
+    CLASS_ATTR_DOUBLE(c, "motion", 0, t_kbeyond, motion);
+    CLASS_ATTR_ACCESSORS(c, "motion", NULL, kbeyond_attr_set_motion);
+    CLASS_ATTR_FILTER_CLIP(c, "motion", 0.0, 1.0);
 
     CLASS_ATTR_DOUBLE(c, "phiweight", 0, t_kbeyond, phiweight);
     CLASS_ATTR_ACCESSORS(c, "phiweight", NULL, kbeyond_attr_set_phiweight);

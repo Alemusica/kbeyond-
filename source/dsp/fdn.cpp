@@ -5,6 +5,8 @@
 
 namespace kbeyond::dsp {
 
+namespace filters = kbeyond::dsp;
+
 namespace {
 constexpr double kGoldenRatio = 1.6180339887498948482;
 }

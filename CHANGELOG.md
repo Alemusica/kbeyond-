@@ -3,6 +3,8 @@
 ## [Unreleased]
 - Ricalibrato il mapping di `@regen`/`@decay` per preservare un floor udibile e una crescita progressiva del feedback.
 - Aggiunto test DSP che misura `fdn_decay` e l'energia d'uscita agli step 0.1/0.5/0.9.
+- Introdotto detector range–doppler con attributo `@motion` per modulare `@width`, damping MF/HF e `@moddepth` mantenendo trasformazioni energy-preserving.
+- Estesa la suite di test con verifiche su width dinamica, mod depth e normalizzazione dell'energia.
 
 # [0.2.0] - 2024-07-01
 - Aggiunto attributo `@mode_mix` con modalità Householder, Walsh-Hadamard e Hybrid.
