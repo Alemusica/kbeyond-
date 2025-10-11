@@ -227,10 +227,13 @@ void t_kbeyond::update_laser_envelope() {
     qswitchRelease = std::exp(-1.0 / std::max(1.0, sr * qReleaseTime));
 }
 
-void t_kbeyond::render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR) {
+void t_kbeyond::render_early(double inL, double inR, double widthNorm, double earlyAmt, double focusAmt, double &earlyL, double &earlyR) {
     widthNorm = clampd(widthNorm, 0.0, 2.0);
-    double wMain = 0.5 * (1.0 + widthNorm);
-    double wCross = 0.5 * (1.0 - widthNorm);
+    double focusNorm = clampd(focusAmt, 0.0, 1.0);
+    double wMainBase = 0.5 * (1.0 + widthNorm);
+    double wCrossBase = 0.5 * (1.0 - widthNorm);
+    double wMain = lerp(1.0, wMainBase, focusNorm);
+    double wCross = lerp(0.0, wCrossBase, focusNorm);
     double midIn = 0.5 * (inL + inR);
     double sideIn = 0.5 * (inL - inR);
     double detector = std::max(std::fabs(midIn), std::fabs(sideIn));
@@ -238,10 +241,12 @@ void t_kbeyond::render_early(double inL, double inR, double widthNorm, double ea
     laserEnv = lerp(detector, laserEnv, envCoef);
     double gateBase = clampd((laserEnv - laserGateScaled) / 0.3, 0.0, 1.0);
     double clusterGate = std::sqrt(gateBase);
-    laserExcite = clusterGate;
+    double focusGate = clusterGate * focusNorm;
+    laserExcite = focusGate;
     earlyBufMid.write(midIn + tiny());
     earlyBufSide.write(sideIn + tiny());
-    double sideBlend = clampd(0.5 * widthNorm, 0.0, 1.0);
+    double sideBlendBase = clampd(0.5 * widthNorm, 0.0, 1.0);
+    double sideBlend = lerp(0.0, sideBlendBase, focusNorm);
     double left = 0.0;
     double right = 0.0;
     for (int tap = 0; tap < kEarlyTaps; ++tap) {
@@ -269,7 +274,7 @@ void t_kbeyond::render_early(double inL, double inR, double widthNorm, double ea
         double swirlB = std::sin(phaseNow * 0.5 + 1.0471975511965976);
         double swirlMix = 0.5 * (swirl + swirlB);
         double modDepth = lerp(0.25, 0.9, clusterAmt * clusterAmt);
-        double gate = clusterGate * clusterGate;
+        double gate = focusGate * focusGate;
         if (gate < 1.0e-6)
             gate = 0.0;
         if (gate > 0.0) {
@@ -297,6 +302,12 @@ void t_kbeyond::render_early(double inL, double inR, double widthNorm, double ea
         laserPhase += laserPhaseInc;
         if (laserPhase >= 2.0 * M_PI)
             laserPhase -= 2.0 * M_PI;
+    }
+    if (focusNorm < 1.0) {
+        double center = 0.5 * (left + right);
+        double blend = focusNorm * focusNorm;
+        left = lerp(center, left, blend);
+        right = lerp(center, right, blend);
     }
     earlyL = left * earlyAmt;
     earlyR = right * earlyAmt;
@@ -601,6 +612,10 @@ t_max_err kbeyond_attr_set_filter(t_kbeyond* x, void* attr, long argc, t_atom* a
 
 t_max_err kbeyond_attr_set_early(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->early, 0.0, 1.0, nullptr);
+}
+
+t_max_err kbeyond_attr_set_focus(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->focus, 0.0, 1.0, nullptr);
 }
 
 t_max_err kbeyond_attr_set_predelay(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
@@ -1007,6 +1022,7 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
     double widthNorm = clampd(x->width, 0.0, 2.0);
     double mix = clampd(x->mix, 0.0, 1.0);
     double earlyAmt = clampd(x->early, 0.0, 1.0);
+    double focusAmt = clampd(x->focus, 0.0, 1.0);
     double moddepth = clampd(x->moddepth, 0.0, 32.0);
 
     for (long i = 0; i < sampleframes; ++i) {
@@ -1027,7 +1043,7 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
 
         double earlyL = 0.0;
         double earlyR = 0.0;
-        x->render_early(predOutL, predOutR, widthNorm, earlyAmt, earlyL, earlyR);
+        x->render_early(predOutL, predOutR, widthNorm, earlyAmt, focusAmt, earlyL, earlyR);
 
         double qTarget = x->laserExcite * clampd(x->laser, 0.0, 1.0);
         if (x->qswitchWindowSamples > 0 && x->laserDiffusion > 0.0) {
@@ -1129,6 +1145,10 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "early", 0, t_kbeyond, early);
     CLASS_ATTR_ACCESSORS(c, "early", NULL, kbeyond_attr_set_early);
     CLASS_ATTR_FILTER_CLIP(c, "early", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "focus", 0, t_kbeyond, focus);
+    CLASS_ATTR_ACCESSORS(c, "focus", NULL, kbeyond_attr_set_focus);
+    CLASS_ATTR_FILTER_CLIP(c, "focus", 0.0, 1.0);
 
     CLASS_ATTR_DOUBLE(c, "predelay", 0, t_kbeyond, predelay);
     CLASS_ATTR_ACCESSORS(c, "predelay", NULL, kbeyond_attr_set_predelay);

@@ -7,7 +7,7 @@
 - Predelay sensibile al sample-rate, riflessioni precoci φ-spaced con controllo stereo M/S.
 - Cluster "Laser" opzionale con tap chirp/m-sequence e Q-switch di diffusione per enfatizzare i primi 200–600 ms di coda.
 - Modulatori indipendenti per ciascuna linea FDN con parametri `@modrate` e `@moddepth`.
-- Controlli completi: `@regen @derez @filter @early @predelay @mix @width @size @color @modrate @moddepth @phiweight @mode_mix`.
+- Controlli completi: `@regen @derez @filter @early @focus @predelay @mix @width @size @color @modrate @moddepth @phiweight @mode_mix`.
 - Implementazione C++17, 64-bit only, compatibile con Max 8/9.
 
 ## Struttura del repository
@@ -62,11 +62,15 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 - `docs/roadmap_it.md` descrive le fasi di evoluzione previste, con criteri di accettazione per ciascuna milestone.
 
 ### Attributi Laser
-- `@laser`: mix principale del cluster (0–1).
+- `@laser`: mix principale del cluster (0–1). 
 - `@laserfocus`: controlla densità e curvatura chirp (0–1, ricampiona i tap).
 - `@lasergate`: soglia dell'envelope detector che accende il cluster (0–1).
 - `@laserwindow`: durata della finestra Q-switch (0.2–0.6 s, ricampiona i contatori).
-- `@laserdiffusion`: intensità dell'alternativa di diffusione durante il Q-switch (0–1).
+- `@laserdiffusion`: intensità dell'alternativa di diffusione durante il Q-switch (0–1). 
+
+### Riflessi precoci
+- `@early`: livello complessivo delle riflessioni precoci (0–1).
+- `@focus`: concentra le riflessioni precoci verso il centro riducendo gradualmente la componente side e l'attivazione del cluster quando diminuisce (0–1, default 1.0).
 
 ### Modalità di diffusione (`@mode_mix`)
 - `householder`: matrice Householder pesata con φ, densa e leggermente colorata.
