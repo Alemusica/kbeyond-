@@ -10,6 +10,8 @@
 
 namespace kbeyond::dsp {
 
+namespace filters = kbeyond::dsp;
+
 struct FdnState {
     std::array<DelayLine, kFdnSize> lines;
     std::array<double, kFdnSize> lengths{};

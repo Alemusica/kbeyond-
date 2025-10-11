@@ -6,8 +6,9 @@
 - 16 linee di ritardo con diffusore selezionabile: Householder(φ), Walsh-Hadamard o ibrido.
 - Predelay sensibile al sample-rate, riflessioni precoci φ-spaced con controllo stereo M/S.
 - Cluster "Laser" opzionale con tap chirp/m-sequence e Q-switch di diffusione per enfatizzare i primi 200–600 ms di coda.
+- Detector range–doppler (RMS lento + banda 0.7–3 kHz) che modula width/damping/mod depth con slew controllato da `@motion`.
 - Modulatori indipendenti per ciascuna linea FDN con parametri `@modrate` e `@moddepth`.
-- Controlli completi: `@regen @derez @filter @early @focus @predelay @mix @width @size @color @modrate @moddepth @phiweight @mode_mix`.
+- Controlli completi: `@regen @derez @filter @early @focus @predelay @mix @width @size @color @modrate @moddepth @motion @phiweight @mode_mix`.
 - Implementazione C++17, 64-bit only, compatibile con Max 8/9.
 
 ## Struttura del repository
@@ -76,6 +77,12 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 - `householder`: matrice Householder pesata con φ, densa e leggermente colorata.
 - `wht`: trasformata Walsh-Hadamard 16×16 normalizzata, per una distribuzione più granulare e simmetrica.
 - `hybrid`: media ortonormale tra Householder e WHT, utile per code molto dense con risposta transitoria bilanciata.
+
+### Controllo dinamico (`@motion`)
+- `@motion` (0–1) imposta la quantità di intervento del detector range–doppler.
+- Il detector calcola un RMS lento (≈100 ms) sui segnali Mid/Side e una componente in banda 0.7–3 kHz (≈15 ms), con smoothing sull'uscita.
+- L'energia lenta modula progressivamente `@width` e aumenta il damping MF/HF quando il livello sale, mantenendo le matrici di uscita normalizzate.
+- La componente in banda accelera `@moddepth` e contribuisce al damping HF senza superare i valori base, assicurando trasformazioni energy-preserving.
 
 ## Note di implementazione DSP
 - Il predelay (`@predelay`) è espresso in secondi (0–0.5 s) e ricampionato al cambio di sample-rate.

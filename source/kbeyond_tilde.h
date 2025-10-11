@@ -53,6 +53,7 @@ using t_max_err = int;
 #include "dsp/fdn.h"
 #include "dsp/decay.h"
 #include "dsp/mod.h"
+#include "dsp/detector.h"
 
 struct t_kbeyond;
 
@@ -94,6 +95,7 @@ struct t_kbeyond {
     double phiweight = kbeyond::dsp::AttributeDefaults::phiweight;
     double coherence = kbeyond::dsp::AttributeDefaults::coherence;
     double uwalkRate = kbeyond::dsp::AttributeDefaults::uwalkRate;
+    double motion    = kbeyond::dsp::AttributeDefaults::motion;
 
     // SR / vector
     double sr = 48000.0;
@@ -153,6 +155,10 @@ struct t_kbeyond {
     uint32_t rng = 0x1234567u;
 
     kbeyond::dsp::ModState modState {};
+    kbeyond::dsp::RangeDopplerDetector motionDetector {};
+    double rangeEnv = 0.0;
+    double dopplerEnv = 0.0;
+    double spreadEnv = 0.5;
 
     // Methods
     void setup_sr(double newsr);
@@ -174,6 +180,21 @@ struct t_kbeyond {
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
     void apply_quantum_walk(std::array<double, N> &feedback);
     void update_injection_weights();
+    void apply_width(double widthNorm);
     std::vector<double> make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const;
+
+#ifdef KBEYOND_UNIT_TEST
+    void render_early(double inL,
+                      double inR,
+                      double widthValue,
+                      double earlyAmt,
+                      double focusAmt,
+                      double &outL,
+                      double &outR);
+    double debugWidthTarget = 0.0;
+    double debugModDepthTarget = 0.0;
+    double debugDampMFValue = 0.0;
+    double debugDampHFValue = 0.0;
+#endif
 };
 

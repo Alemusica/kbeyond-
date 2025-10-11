@@ -7,6 +7,13 @@
 #include <utility>
 #include <vector>
 
+using kbeyond::dsp::clampd;
+
+namespace motion_tests {
+bool run_motion_width_response();
+bool run_motion_moddepth_response();
+}
+
 namespace {
 
 bool test_early_reflections() {
@@ -365,5 +372,9 @@ int main() {
         return 3;
     if (!test_decay_regen_response())
         return 4;
+    if (!motion_tests::run_motion_width_response())
+        return 5;
+    if (!motion_tests::run_motion_moddepth_response())
+        return 6;
     return 0;
 }

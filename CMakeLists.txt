@@ -60,6 +60,7 @@ add_library(kbeyond_tilde MODULE
   source/dsp/early.cpp
   source/dsp/fdn.cpp
   source/dsp/decay.cpp
+  source/dsp/detector.cpp
   source/dsp/mod.cpp
   source/dsp/mixing.cpp
 )
@@ -132,6 +133,7 @@ if(KBEYOND_BUILD_TESTS)
     enable_testing()
     add_executable(kbeyond_tests
         tests/early_reflections_test.cpp
+        tests/motion_detector_test.cpp
         source/kbeyond_tilde.cpp
         source/dsp/prime_modes.cpp
         source/dsp/buffers.cpp
@@ -139,6 +141,7 @@ if(KBEYOND_BUILD_TESTS)
         source/dsp/early.cpp
         source/dsp/fdn.cpp
         source/dsp/decay.cpp
+        source/dsp/detector.cpp
         source/dsp/mod.cpp
         source/dsp/mixing.cpp)
     target_compile_definitions(kbeyond_tests PRIVATE KBEYOND_UNIT_TEST)

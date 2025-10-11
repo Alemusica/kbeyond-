@@ -36,6 +36,7 @@ struct AttributeDefaults {
     static constexpr double phiweight = 0.7;
     static constexpr double coherence = 0.8;
     static constexpr double uwalkRate = 0.25;
+    static constexpr double motion = 0.0;
     static constexpr double decay = 0.0; // seconds
     static constexpr double dampLF = 0.2;
     static constexpr double dampMF = 0.0;
