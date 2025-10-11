@@ -7,6 +7,7 @@
       "description": "Ampia coda dorata, modulazione dolce",
       "attributes": {
         "regen": 0.88,
+        "decay": 0.0,
         "derez": 0.7,
         "filter": 0.65,
         "early": 0.35,
@@ -15,6 +16,9 @@
         "width": 1.6,
         "size": 0.92,
         "color": 0.25,
+        "damplf": 0.2,
+        "dampmf": 0.0,
+        "damphf": 0.6,
         "modrate": 0.18,
         "moddepth": 6.0,
         "phiweight": 0.8
@@ -25,6 +29,7 @@
       "description": "Densità costante, brillante",
       "attributes": {
         "regen": 0.78,
+        "decay": 0.0,
         "derez": 1.0,
         "filter": 0.85,
         "early": 0.28,
@@ -33,6 +38,9 @@
         "width": 1.3,
         "size": 0.58,
         "color": 0.15,
+        "damplf": 0.2,
+        "dampmf": 0.0,
+        "damphf": 0.6,
         "modrate": 0.35,
         "moddepth": 4.0,
         "phiweight": 0.6
@@ -43,6 +51,7 @@
       "description": "Stanza compatta con focus centrale",
       "attributes": {
         "regen": 0.55,
+        "decay": 0.0,
         "derez": 0.6,
         "filter": 0.52,
         "early": 0.45,
@@ -51,6 +60,9 @@
         "width": 0.9,
         "size": 0.35,
         "color": -0.1,
+        "damplf": 0.2,
+        "dampmf": 0.0,
+        "damphf": 0.6,
         "modrate": 0.22,
         "moddepth": 2.5,
         "phiweight": 0.5

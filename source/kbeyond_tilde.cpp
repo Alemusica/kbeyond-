@@ -10,6 +10,7 @@ static constexpr std::size_t kAssistStringMax = 256;
 
 static t_class* s_kbeyond_class = nullptr;
 
+#ifndef KBEYOND_UNIT_TEST
 namespace {
 
 double atom_to_double(long argc, t_atom* argv, double fallback) {
@@ -23,6 +24,7 @@ double atom_to_double(long argc, t_atom* argv, double fallback) {
 }
 
 } // namespace
+#endif
 
 void t_kbeyond::setup_sr(double newsr) {
     sr = newsr > 1.0 ? newsr : 48000.0;
@@ -54,16 +56,53 @@ void t_kbeyond::setup_early() {
     const double phi = 1.6180339887498948482;
     double baseMs = 5.2;
     double scale = lerp(0.7, 1.45, size);
-    for (int i = 0; i < kEarlyTaps; ++i) {
-        double idx = (double)i / (double)std::max(1, kEarlyTaps - 1);
+    int pairs = kEarlyTaps / 2;
+    auto storeTap = [&](int index, long samp, double gain, double pan) {
+        double theta = (pan + 1.0) * (0.25 * M_PI);
+        earlyDel[index] = samp;
+        earlyGain[index] = gain;
+        earlyCos[index] = std::cos(theta);
+        earlySin[index] = std::sin(theta);
+    };
+    for (int p = 0; p < pairs; ++p) {
+        double idx = (double)p / (double)std::max(1, pairs - 1);
         double ms = baseMs * std::pow(phi, idx * 1.2);
         ms = std::min(ms * scale, maxMs);
         long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBuf.size() - 2.0);
-        earlyDel[i] = samp;
-        double decay = std::pow(0.72, (double)i + 1.0);
-        earlyGain[i] = decay;
-        earlyPan[i] = lerp(-1.0, 1.0, idx);
+        double gain = std::pow(0.72, (double)p + 1.0);
+        double panMag = 1.0 - idx;
+        double panLeft = -panMag;
+        double panRight = panMag;
+        storeTap(p, samp, gain, panLeft);
+        storeTap(kEarlyTaps - 1 - p, samp, gain, panRight);
     }
+    if (kEarlyTaps % 2 != 0) {
+        int center = pairs;
+        double ms = baseMs * std::pow(phi, 0.65);
+        ms = std::min(ms * scale, maxMs);
+        long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBuf.size() - 2.0);
+        double gain = std::pow(0.72, (double)pairs + 1.0);
+        storeTap(center, samp, gain, 0.0);
+    }
+}
+
+void t_kbeyond::render_early(double midIn, double widthNorm, double earlyAmt, double &earlyL, double &earlyR) {
+    widthNorm = clampd(widthNorm, 0.0, 2.0);
+    double wMain = 0.5 * (1.0 + widthNorm);
+    double wCross = 0.5 * (1.0 - widthNorm);
+    earlyBuf.write(midIn + tiny());
+    double left = 0.0;
+    double right = 0.0;
+    for (int tap = 0; tap < kEarlyTaps; ++tap) {
+        double tapSample = earlyBuf.readInt(earlyDel[tap]);
+        double energy = tapSample * earlyGain[tap];
+        double baseL = energy * earlyCos[tap];
+        double baseR = energy * earlySin[tap];
+        left += wMain * baseL + wCross * baseR;
+        right += wCross * baseL + wMain * baseR;
+    }
+    earlyL = left * earlyAmt;
+    earlyR = right * earlyAmt;
 }
 
 void t_kbeyond::setup_fdn() {
@@ -85,6 +124,7 @@ void t_kbeyond::setup_fdn() {
         double angle = (2.0 * M_PI * (double)i) / (double)N;
         inWeights[i] = 0.9 / (double)N * (1.0 + 0.35 * std::sin(angle * 0.73 + 0.2));
     }
+    update_decay();
 }
 
 void t_kbeyond::refresh_filters() {
@@ -129,6 +169,36 @@ void t_kbeyond::update_modulators() {
     }
 }
 
+void t_kbeyond::update_decay() {
+    double rt60 = decay;
+    double dampLFNorm = clampd(dampLF, 0.0, 1.0);
+    double dampMFNorm = clampd(dampMF, 0.0, 1.0);
+    double dampHFNorm = clampd(dampHF, 0.0, 1.0);
+    dampLF_mul = lerp(1.0, 0.35, dampLFNorm);
+    dampMF_mul = lerp(1.0, 0.45, dampMFNorm);
+    dampHF_mul = lerp(1.0, 0.12, dampHFNorm);
+    double minDecay = 0.05;
+    for (int i = 0; i < N; ++i) {
+        double delaySamples = fdn_len[i];
+        double delaySeconds = sr > 0.0 ? delaySamples / sr : 0.0;
+        double gain = 1.0;
+        if (rt60 > 0.0 && delaySeconds > 0.0) {
+            double tau = std::max(rt60, minDecay);
+            double exponent = (-3.0 * delaySeconds) / tau;
+            gain = std::pow(10.0, exponent);
+        }
+        fdn_decay[i] = clampd(gain, 0.0, 0.99995);
+        double idx = (double)i / (double)std::max(1, N - 1);
+        double lfCut = lerp(140.0, 320.0, idx);
+        double hfCut = lerp(2800.0, sr * 0.4, idx);
+        fdn_low[i].setCutoff(sr, lfCut);
+        fdn_high[i].setCutoff(sr, hfCut);
+        fdn_low[i].reset();
+        fdn_high[i].reset();
+    }
+}
+
+#ifndef KBEYOND_UNIT_TEST
 // ------------------------------------------------------------ Attribute helpers
 
 t_max_err kbeyond_attr_set_double(t_kbeyond* x, void*, long argc, t_atom* argv, double* target, double lo, double hi, void (t_kbeyond::*after)()) {
@@ -144,6 +214,10 @@ t_max_err kbeyond_attr_set_double(t_kbeyond* x, void*, long argc, t_atom* argv, 
 
 t_max_err kbeyond_attr_set_regen(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->regen, 0.0, 0.999, nullptr);
+}
+
+t_max_err kbeyond_attr_set_decay(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->decay, 0.0, 20.0, &t_kbeyond::update_decay);
 }
 
 t_max_err kbeyond_attr_set_derez(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
@@ -184,6 +258,18 @@ t_max_err kbeyond_attr_set_size(t_kbeyond* x, void* attr, long argc, t_atom* arg
 
 t_max_err kbeyond_attr_set_color(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->color, -1.0, 1.0, &t_kbeyond::refresh_filters);
+}
+
+t_max_err kbeyond_attr_set_damplf(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->dampLF, 0.0, 1.0, &t_kbeyond::update_decay);
+}
+
+t_max_err kbeyond_attr_set_dampmf(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->dampMF, 0.0, 1.0, &t_kbeyond::update_decay);
+}
+
+t_max_err kbeyond_attr_set_damphf(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->dampHF, 0.0, 1.0, &t_kbeyond::update_decay);
 }
 
 t_max_err kbeyond_attr_set_modrate(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
@@ -281,20 +367,9 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         double midIn = 0.5 * (predOutL + predOutR);
         double sideIn = 0.5 * (predOutL - predOutR);
 
-        x->earlyBuf.write(midIn + x->tiny());
         double earlyL = 0.0;
         double earlyR = 0.0;
-        for (int tap = 0; tap < t_kbeyond::kEarlyTaps; ++tap) {
-            double tapSample = x->earlyBuf.readInt(x->earlyDel[tap]);
-            double energy = tapSample * x->earlyGain[tap];
-            double pan = x->earlyPan[tap];
-            double side = energy * pan * widthNorm;
-            double mid = energy;
-            earlyL += mid + side;
-            earlyR += mid - side;
-        }
-        earlyL *= earlyAmt;
-        earlyR *= earlyAmt;
+        x->render_early(midIn, widthNorm, earlyAmt, earlyL, earlyR);
 
         std::array<double, t_kbeyond::N> vec {};
         for (int l = 0; l < t_kbeyond::N; ++l) {
@@ -319,7 +394,13 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         double tailL = 0.0;
         double tailR = 0.0;
         for (int l = 0; l < t_kbeyond::N; ++l) {
-            double feedback = x->fdn_fb[l] * regen;
+            double fb = x->fdn_fb[l];
+            double low = x->fdn_low[l].process(fb);
+            double band = x->fdn_high[l].process(fb);
+            double high = fb - band;
+            double mid = band - low;
+            double damped = low * x->dampLF_mul + mid * x->dampMF_mul + high * x->dampHF_mul;
+            double feedback = damped * regen * x->fdn_decay[l];
             double injection = midIn * x->inWeights[l] + sideIn * x->outWeightsL[l] * 0.15;
             x->fdn[l].write(feedback + injection + x->tiny());
             tailL += x->fdn_out[l] * x->outWeightsL[l];
@@ -345,6 +426,10 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "regen", 0, t_kbeyond, regen);
     CLASS_ATTR_ACCESSORS(c, "regen", NULL, kbeyond_attr_set_regen);
     CLASS_ATTR_FILTER_CLIP(c, "regen", 0.0, 0.999);
+
+    CLASS_ATTR_DOUBLE(c, "decay", 0, t_kbeyond, decay);
+    CLASS_ATTR_ACCESSORS(c, "decay", NULL, kbeyond_attr_set_decay);
+    CLASS_ATTR_FILTER_CLIP(c, "decay", 0.0, 20.0);
 
     CLASS_ATTR_DOUBLE(c, "derez", 0, t_kbeyond, derez);
     CLASS_ATTR_ACCESSORS(c, "derez", NULL, kbeyond_attr_set_derez);
@@ -378,6 +463,18 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_ACCESSORS(c, "color", NULL, kbeyond_attr_set_color);
     CLASS_ATTR_FILTER_CLIP(c, "color", -1.0, 1.0);
 
+    CLASS_ATTR_DOUBLE(c, "damplf", 0, t_kbeyond, dampLF);
+    CLASS_ATTR_ACCESSORS(c, "damplf", NULL, kbeyond_attr_set_damplf);
+    CLASS_ATTR_FILTER_CLIP(c, "damplf", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "dampmf", 0, t_kbeyond, dampMF);
+    CLASS_ATTR_ACCESSORS(c, "dampmf", NULL, kbeyond_attr_set_dampmf);
+    CLASS_ATTR_FILTER_CLIP(c, "dampmf", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "damphf", 0, t_kbeyond, dampHF);
+    CLASS_ATTR_ACCESSORS(c, "damphf", NULL, kbeyond_attr_set_damphf);
+    CLASS_ATTR_FILTER_CLIP(c, "damphf", 0.0, 1.0);
+
     CLASS_ATTR_DOUBLE(c, "modrate", 0, t_kbeyond, modrate);
     CLASS_ATTR_ACCESSORS(c, "modrate", NULL, kbeyond_attr_set_modrate);
     CLASS_ATTR_FILTER_CLIP(c, "modrate", 0.0, 5.0);
@@ -394,4 +491,6 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     class_register(CLASS_BOX, c);
     s_kbeyond_class = c;
 }
+
+#endif // KBEYOND_UNIT_TEST
 

@@ -118,3 +118,16 @@ target_compile_options(kbeyond_tilde PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:/EHsc /Zc:__cplusplus /permissive->
   $<$<CXX_COMPILER_ID:GNU,Clang>:-fvisibility=hidden>
 )
+
+option(KBEYOND_BUILD_TESTS "Build kbeyond~ unit tests" OFF)
+if(KBEYOND_BUILD_TESTS)
+    enable_testing()
+    add_executable(kbeyond_tests
+        tests/early_reflections_test.cpp
+        source/kbeyond_tilde.cpp)
+    target_compile_definitions(kbeyond_tests PRIVATE KBEYOND_UNIT_TEST)
+    target_include_directories(kbeyond_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source)
+    target_compile_features(kbeyond_tests PRIVATE cxx_std_17)
+    add_test(NAME kbeyond_early_mono_impulse COMMAND kbeyond_tests)
+endif()
+
