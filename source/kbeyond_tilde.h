@@ -8,14 +8,15 @@
 // Inlets:  2 (signal L/R)
 // Outlets: 2 (signal L/R)
 // Attributes (0..1 unless specified):
-//   @regen, @derez, @filter, @early, @predelay (0..0.5 seconds), @mix,
+//   @regen, @decay(seconds), @derez, @filter, @early, @predelay (0..0.5 seconds), @mix,
 //   @width(0..2), @size(0..1), @color(-1..+1), @modrate(Hz), @moddepth(samples),
-//   @phiweight(0..1)
+//   @damplf, @dampmf, @damphf, @phiweight(0..1)
 // Notes:
 //  - Delay network is a 16x16 FDN with Householder(φ) mixing (computed on the fly).
 //  - Early reflections are φ-spaced; width via M/S shuffler.
 //  - "derez" here controls pre-FDN bandwidth.
 
+#ifndef KBEYOND_UNIT_TEST
 extern "C" {
 #include "ext.h"
 #include "ext_obex.h"
@@ -24,6 +25,18 @@ extern "C" {
 
 #ifndef C74_EXPORT
 #define C74_EXPORT
+#endif
+#else
+struct t_pxobject {};
+struct t_symbol {};
+struct t_atom {};
+struct t_object {};
+struct t_class {};
+using t_max_err = int;
+
+#ifndef C74_EXPORT
+#define C74_EXPORT
+#endif
 #endif
 
 #include <vector>
@@ -108,6 +121,7 @@ struct OnePoleLP {
         z = a * x + b * z;
         return z;
     }
+    void reset() { z = 0.0; }
 };
 
 // ------------------------------- Main object
@@ -146,7 +160,8 @@ struct t_kbeyond {
     DelayLine earlyBuf;
     std::array<long, kEarlyTaps> earlyDel {};
     std::array<double, kEarlyTaps> earlyGain {};
-    std::array<double, kEarlyTaps> earlyPan {};
+    std::array<double, kEarlyTaps> earlyCos {};
+    std::array<double, kEarlyTaps> earlySin {};
 
     // FDN
     static const int N = 16;
@@ -159,6 +174,8 @@ struct t_kbeyond {
     std::array<double, N>    fdn_fb {};
     std::array<Tilt, N>      fdn_tilt {};
     std::array<OnePoleLP, N> fdn_lp {};
+    std::array<OnePoleLP, N> fdn_low {};
+    std::array<OnePoleLP, N> fdn_high {};
     std::array<double, N>    inWeights {};
 
     // Output mapping
@@ -167,6 +184,16 @@ struct t_kbeyond {
 
     // Householder vector u (normalized)
     std::array<double, N> u {};
+
+    // Decay / damping
+    double decay    = 0.0;  // seconds, 0 disables RT60 mapping
+    double dampLF   = 0.2;
+    double dampMF   = 0.0;
+    double dampHF   = 0.6;
+    double dampLF_mul = 1.0;
+    double dampMF_mul = 1.0;
+    double dampHF_mul = 1.0;
+    std::array<double, N> fdn_decay {};
 
     // RNG for tiny noise to avoid denormals
     uint32_t rng = 0x1234567u;
@@ -180,6 +207,8 @@ struct t_kbeyond {
     void update_householder();
     void update_output_weights();
     void update_modulators();
+    void update_decay();
+    void render_early(double midIn, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);
     inline double tiny() {
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
         return (double)(rng & 0xFFFFFF) * 1.0e-12 * (1.0/16777216.0);

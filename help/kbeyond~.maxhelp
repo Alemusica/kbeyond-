@@ -32,9 +32,9 @@
         "box": {
           "id": "comment-attrs",
           "maxclass": "comment",
-          "patching_rect": [260.0, 80.0, 220.0, 34.0],
-          "linecount": 2,
-          "text": "attrui objects expose @mix and @width\nDrag to audition width / blend"
+          "patching_rect": [260.0, 80.0, 240.0, 48.0],
+          "linecount": 3,
+          "text": "attrui objects expose @mix / @width / @decay\nDrag to audition blend, space and tail\nUse damphf to trim brightness"
         }
       },
       {
@@ -50,14 +50,14 @@
           "id": "kbeyond",
           "maxclass": "newobj",
           "patching_rect": [20.0, 160.0, 230.0, 22.0],
-          "text": "kbeyond~ @mix 0.5 @width 1.2"
+          "text": "kbeyond~ @mix 0.5 @width 1.2 @decay 3.0"
         }
       },
       {
         "box": {
           "id": "ezdac",
           "maxclass": "ezdac~",
-          "patching_rect": [20.0, 240.0, 45.0, 45.0]
+          "patching_rect": [20.0, 280.0, 45.0, 45.0]
         }
       },
       {
@@ -78,9 +78,25 @@
       },
       {
         "box": {
+          "id": "attr-decay",
+          "maxclass": "attrui",
+          "patching_rect": [260.0, 200.0, 140.0, 22.0],
+          "attr": "decay"
+        }
+      },
+      {
+        "box": {
+          "id": "attr-damphf",
+          "maxclass": "attrui",
+          "patching_rect": [260.0, 240.0, 140.0, 22.0],
+          "attr": "damphf"
+        }
+      },
+      {
+        "box": {
           "id": "comment-signal",
           "maxclass": "comment",
-          "patching_rect": [20.0, 200.0, 220.0, 20.0],
+          "patching_rect": [20.0, 230.0, 220.0, 20.0],
           "text": "Stereo out -> ezdac~"
         }
       }
@@ -119,6 +135,18 @@
       {
         "patchline": {
           "source": ["attr-width", 0],
+          "destination": ["kbeyond", 0]
+        }
+      },
+      {
+        "patchline": {
+          "source": ["attr-decay", 0],
+          "destination": ["kbeyond", 0]
+        }
+      },
+      {
+        "patchline": {
+          "source": ["attr-damphf", 0],
           "destination": ["kbeyond", 0]
         }
       }
