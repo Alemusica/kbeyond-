@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
+#include <numeric>
 #include <utility>
 #include <vector>
 
@@ -239,6 +241,108 @@ bool test_quantum_dither_energy() {
     return true;
 }
 
+bool test_prime_mode_spacing() {
+    struct PresetCase {
+        const char* name;
+        double size;
+        double focus;
+        double width;
+        double early;
+        double moddepth;
+        double laser;
+        double laserFocus;
+        double laserGate;
+        double laserWindow;
+        double laserDiffusion;
+    };
+
+    const std::vector<PresetCase> presets = {
+        {"Factory Default", kbeyond::dsp::AttributeDefaults::size, kbeyond::dsp::AttributeDefaults::focus,
+         kbeyond::dsp::AttributeDefaults::width, kbeyond::dsp::AttributeDefaults::early,
+         kbeyond::dsp::AttributeDefaults::moddepth, kbeyond::dsp::AttributeDefaults::laser,
+         kbeyond::dsp::AttributeDefaults::laserFocus, kbeyond::dsp::AttributeDefaults::laserGate,
+         kbeyond::dsp::AttributeDefaults::laserWindow, kbeyond::dsp::AttributeDefaults::laserDiffusion},
+        {"Hall Larga", 0.92, 1.0, 1.6, 0.35, 6.0, 0.0, kbeyond::dsp::AttributeDefaults::laserFocus,
+         kbeyond::dsp::AttributeDefaults::laserGate, kbeyond::dsp::AttributeDefaults::laserWindow,
+         kbeyond::dsp::AttributeDefaults::laserDiffusion},
+        {"Plate Densa", 0.58, 0.95, 1.3, 0.28, 4.0, 0.0, kbeyond::dsp::AttributeDefaults::laserFocus,
+         kbeyond::dsp::AttributeDefaults::laserGate, kbeyond::dsp::AttributeDefaults::laserWindow,
+         kbeyond::dsp::AttributeDefaults::laserDiffusion},
+        {"Room Intima", 0.35, 0.6, 0.9, 0.45, 2.5, 0.0, kbeyond::dsp::AttributeDefaults::laserFocus,
+         kbeyond::dsp::AttributeDefaults::laserGate, kbeyond::dsp::AttributeDefaults::laserWindow,
+         kbeyond::dsp::AttributeDefaults::laserDiffusion},
+        {"Laser Sweep", 0.7, 0.85, 1.45, 0.38, 5.5, 0.85, 0.65, 0.32, 0.42, 0.72},
+    };
+
+    for (const auto& preset : presets) {
+        t_kbeyond inst{};
+        inst.setup_sr(48000.0);
+        inst.size = preset.size;
+        inst.focus = preset.focus;
+        inst.width = preset.width;
+        inst.early = preset.early;
+        inst.moddepth = preset.moddepth;
+        inst.laser = preset.laser;
+        inst.laserFocus = preset.laserFocus;
+        inst.laserGate = preset.laserGate;
+        inst.laserWindow = preset.laserWindow;
+        inst.laserDiffusion = preset.laserDiffusion;
+        inst.setup_early();
+        inst.setup_fdn();
+
+        const auto& delays = inst.earlySection.debugTapDelays();
+        std::vector<long> uniqueDelays;
+        uniqueDelays.reserve(delays.size());
+        for (long d : delays) {
+            if (d > 0)
+                uniqueDelays.push_back(d);
+        }
+        std::sort(uniqueDelays.begin(), uniqueDelays.end());
+        uniqueDelays.erase(std::unique(uniqueDelays.begin(), uniqueDelays.end()), uniqueDelays.end());
+        for (std::size_t i = 1; i < uniqueDelays.size(); ++i) {
+            if (uniqueDelays[i] - uniqueDelays[i - 1] < 2) {
+                std::cerr << "Early tap spacing violation in preset " << preset.name << std::endl;
+                return false;
+            }
+        }
+
+        const auto& gains = inst.earlySection.debugTapGains();
+        const auto& cosines = inst.earlySection.debugTapCos();
+        const auto& sines = inst.earlySection.debugTapSin();
+        double energy = 0.0;
+        for (int t = 0; t < t_kbeyond::kEarlyTaps; ++t) {
+            double wL = gains[static_cast<std::size_t>(t)] * cosines[static_cast<std::size_t>(t)];
+            double wR = gains[static_cast<std::size_t>(t)] * sines[static_cast<std::size_t>(t)];
+            energy += wL * wL + wR * wR;
+        }
+        if (std::abs(energy - 1.0) > 1.0e-6) {
+            std::cerr << "Early gain normalization failed for preset " << preset.name << std::endl;
+            return false;
+        }
+
+        const auto& lengths = inst.fdnState.lengths;
+        for (std::size_t i = 0; i < lengths.size(); ++i) {
+            long a = static_cast<long>(std::llround(lengths[i]));
+            for (std::size_t j = i + 1; j < lengths.size(); ++j) {
+                long b = static_cast<long>(std::llround(lengths[j]));
+                if (std::llabs(a - b) < 2) {
+                    std::cerr << "FDN spacing violation between lines " << i << " and " << j
+                              << " in preset " << preset.name << std::endl;
+                    return false;
+                }
+                long g = std::gcd(std::llabs(a), std::llabs(b));
+                if (g > 1 && g <= 5) {
+                    std::cerr << "FDN gcd violation (" << g << ") between lines " << i << " and " << j
+                              << " in preset " << preset.name << std::endl;
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 struct DecayResponse {
     double minCoeff = 0.0;
     double maxCoeff = 0.0;
@@ -370,11 +474,13 @@ int main() {
         return 2;
     if (!test_quantum_dither_energy())
         return 3;
-    if (!test_decay_regen_response())
+    if (!test_prime_mode_spacing())
         return 4;
-    if (!motion_tests::run_motion_width_response())
+    if (!test_decay_regen_response())
         return 5;
-    if (!motion_tests::run_motion_moddepth_response())
+    if (!motion_tests::run_motion_width_response())
         return 6;
+    if (!motion_tests::run_motion_moddepth_response())
+        return 7;
     return 0;
 }

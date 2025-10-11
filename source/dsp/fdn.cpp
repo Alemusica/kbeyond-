@@ -2,6 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <numeric>
+#include <optional>
+#include <vector>
+
+#include "dsp_assert.h"
+#include "prime_modes.h"
 
 namespace kbeyond::dsp {
 
@@ -18,21 +25,107 @@ void setup_fdn(FdnState &state,
                const std::vector<double> &latePattern) {
     const double baseMs = lerp(15.0, 55.0, size);
     const double spread = lerp(0.65, 1.35, size);
+    std::vector<long> usedLengths;
+    usedLengths.reserve(static_cast<std::size_t>(kFdnSize));
+    const long minSpacing = 2;
+    const long minLenSamples = 8;
+    const long maxLenSamples = static_cast<long>(std::floor(ms2samp(400.0, sr)));
+    auto altPrime = prime_modes::generate_pattern(prime_modes::Pattern::Prime, kFdnSize * 2, 0x91A5u);
+    auto altPlastica = prime_modes::generate_pattern(prime_modes::Pattern::Plastica, kFdnSize * 2, 0x91A6u);
+    std::size_t altPrimeIndex = 0;
+    std::size_t altPlasticaIndex = 0;
+
+    const auto compute_ms = [&](double idxNorm) {
+        double ms = baseMs * std::pow(kGoldenRatio, (idxNorm - 0.5) * spread);
+        return clampd(ms, 8.0, 400.0);
+    };
+
     for (int i = 0; i < static_cast<int>(kFdnSize); ++i) {
         const double idx = (i < static_cast<int>(latePattern.size()))
                                ? latePattern[static_cast<std::size_t>(i)]
                                : static_cast<double>(i) / static_cast<double>(std::max(1, static_cast<int>(kFdnSize) - 1));
-        double ms = baseMs * std::pow(kGoldenRatio, (idx - 0.5) * spread);
-        ms = clampd(ms, 8.0, 400.0);
-        const double len = ms2samp(ms, sr);
-        std::size_t bufLen = static_cast<std::size_t>(std::ceil(len + modDepth + 16.0));
+        double ms = compute_ms(idx);
+        double lenCandidate = ms2samp(ms, sr);
+
+        const auto conflict_free = [&](long candidate) {
+            for (long prev : usedLengths) {
+                if (std::llabs(candidate - prev) < minSpacing)
+                    return false;
+                long g = std::gcd(std::llabs(candidate), std::llabs(prev));
+                if (g > 1 && g <= 5)
+                    return false;
+            }
+            return true;
+        };
+
+        const auto try_length = [&](double lengthSamples) -> std::optional<long> {
+            long base = clampl(static_cast<long>(std::llround(lengthSamples)), minLenSamples, maxLenSamples);
+            constexpr int offsets[] = {0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5};
+            for (int offset : offsets) {
+                long candidate = clampl(base + offset, minLenSamples, maxLenSamples);
+                if (conflict_free(candidate))
+                    return candidate;
+            }
+            for (long delta = minSpacing; delta < minSpacing + 96; ++delta) {
+                long up = clampl(base + delta, minLenSamples, maxLenSamples);
+                if (conflict_free(up))
+                    return up;
+                long down = clampl(base - delta, minLenSamples, maxLenSamples);
+                if (conflict_free(down))
+                    return down;
+            }
+            return std::nullopt;
+        };
+
+        auto resolved = try_length(lenCandidate);
+        double chosenIdx = idx;
+        double chosenLen = lenCandidate;
+
+        if (!resolved) {
+            while (altPrimeIndex < altPrime.size() && !resolved) {
+                chosenIdx = altPrime[altPrimeIndex++];
+                ms = compute_ms(chosenIdx);
+                chosenLen = ms2samp(ms, sr);
+                resolved = try_length(chosenLen);
+            }
+            while (altPlasticaIndex < altPlastica.size() && !resolved) {
+                chosenIdx = altPlastica[altPlasticaIndex++];
+                ms = compute_ms(chosenIdx);
+                chosenLen = ms2samp(ms, sr);
+                resolved = try_length(chosenLen);
+            }
+            if (!resolved) {
+                long base = clampl(static_cast<long>(std::llround(chosenLen)), minLenSamples, maxLenSamples);
+                for (long delta = minSpacing; delta < minSpacing + 128 && !resolved; ++delta) {
+                    long up = clampl(base + delta, minLenSamples, maxLenSamples);
+                    if (conflict_free(up)) {
+                        resolved = up;
+                        break;
+                    }
+                    long down = clampl(base - delta, minLenSamples, maxLenSamples);
+                    if (conflict_free(down)) {
+                        resolved = down;
+                        break;
+                    }
+                }
+            }
+        }
+
+        long finalSamples = resolved.value_or(clampl(static_cast<long>(std::llround(chosenLen)), minLenSamples, maxLenSamples));
+        dsp_assert_msg(conflict_free(finalSamples), "FDN length spacing/gcd violation");
+        usedLengths.push_back(finalSamples);
+
+        std::size_t bufLen = static_cast<std::size_t>(std::ceil(static_cast<double>(finalSamples) + modDepth + 16.0));
         bufLen = std::max<std::size_t>(bufLen, 64);
-        state.lines[static_cast<std::size_t>(i)].setup(bufLen);
-        state.lengths[static_cast<std::size_t>(i)] = clampd(len, 8.0, static_cast<double>(bufLen) - 4.0);
-        state.reads[static_cast<std::size_t>(i)] = state.lengths[static_cast<std::size_t>(i)];
-        state.outputs[static_cast<std::size_t>(i)] = 0.0;
-        state.feedback[static_cast<std::size_t>(i)] = 0.0;
+        const std::size_t idxLine = static_cast<std::size_t>(i);
+        state.lines[idxLine].setup(bufLen);
+        const double finalLength = clampd(static_cast<double>(finalSamples), 8.0, static_cast<double>(bufLen) - 4.0);
+        state.lengths[idxLine] = finalLength;
+        state.reads[idxLine] = finalLength;
+        state.outputs[idxLine] = 0.0;
+        state.feedback[idxLine] = 0.0;
     }
+
 }
 
 void read_lines(FdnState &state,
