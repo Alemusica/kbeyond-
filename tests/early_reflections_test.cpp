@@ -232,6 +232,126 @@ bool test_quantum_dither_energy() {
     return true;
 }
 
+struct DecayResponse {
+    double minCoeff = 0.0;
+    double maxCoeff = 0.0;
+    double energy = 0.0;
+};
+
+DecayResponse measure_decay_response(double regenValue, double decayValue) {
+    t_kbeyond x{};
+    x.setup_sr(48000.0);
+    x.mix = 1.0;
+    x.early = 0.0;
+    x.predelay = 0.0;
+    x.setup_predelay();
+    x.regen = regenValue;
+    x.decay = decayValue;
+    x.update_decay();
+
+    DecayResponse response{};
+    response.minCoeff = *std::min_element(x.fdn_decay.begin(), x.fdn_decay.end());
+    response.maxCoeff = *std::max_element(x.fdn_decay.begin(), x.fdn_decay.end());
+
+    constexpr int frames = 48000;
+    double widthNorm = clampd(x.width, 0.0, 2.0);
+    double earlyAmt = clampd(x.early, 0.0, 1.0);
+    double focusAmt = clampd(x.focus, 0.0, 1.0);
+    double moddepth = clampd(x.moddepth, 0.0, 32.0);
+
+    for (int n = 0; n < frames; ++n) {
+        double inL = (n == 0) ? 1.0 : 0.0;
+        double inR = inL;
+
+        double predLen = x.predSamps;
+        double predOutL = x.predL.readFrac(predLen);
+        double predOutR = x.predR.readFrac(predLen);
+        x.predL.write(inL + x.tiny());
+        x.predR.write(inR + x.tiny());
+
+        double midIn = 0.5 * (predOutL + predOutR);
+        double sideIn = 0.5 * (predOutL - predOutR);
+
+        double earlyL = 0.0;
+        double earlyR = 0.0;
+        x.render_early(predOutL, predOutR, widthNorm, earlyAmt, focusAmt, earlyL, earlyR);
+
+        std::array<double, t_kbeyond::N> vec{};
+        for (int l = 0; l < t_kbeyond::N; ++l) {
+            double mod = 0.0;
+            if (x.modrate > 0.0 && moddepth > 0.0) {
+                mod = std::sin(x.fdn_phase[l]) * moddepth;
+                x.fdn_phase[l] += x.fdn_phaseInc[l];
+                if (x.fdn_phase[l] > 2.0 * M_PI)
+                    x.fdn_phase[l] -= 2.0 * M_PI;
+            }
+            double read = clampd(x.fdn_len[l] + mod, 2.0, (double)x.fdn[l].size() - 3.0);
+            x.fdn_read[l] = read;
+            double sig = x.fdn[l].readFrac(read);
+            sig = x.fdn_tilt[l].process(sig);
+            sig = x.fdn_lp[l].process(sig);
+            vec[l] = sig;
+            x.fdn_out[l] = sig;
+        }
+
+        x.apply_diffusion(vec, x.fdn_fb);
+        x.apply_quantum_walk(x.fdn_fb);
+
+        double tailL = 0.0;
+        double tailR = 0.0;
+        for (int l = 0; l < t_kbeyond::N; ++l) {
+            double fb = x.fdn_fb[l];
+            double low = x.fdn_low[l].process(fb);
+            double band = x.fdn_high[l].process(fb);
+            double high = fb - band;
+            double mid = band - low;
+            double damped = low * x.dampLF_mul + mid * x.dampMF_mul + high * x.dampHF_mul;
+            double feedback = damped * x.fdn_decay[l];
+            double injection = midIn * x.inWeights[l] + sideIn * x.outWeightsL[l] * 0.15;
+            x.fdn[l].write(feedback + injection + x.tiny());
+            tailL += x.fdn_out[l] * x.outWeightsL[l];
+            tailR += x.fdn_out[l] * x.outWeightsR[l];
+        }
+
+        double wetL = earlyL + tailL;
+        double wetR = earlyR + tailR;
+        response.energy += wetL * wetL + wetR * wetR;
+    }
+
+    return response;
+}
+
+bool test_decay_regen_response() {
+    std::array<double, 3> values{0.1, 0.5, 0.9};
+    std::array<DecayResponse, 3> responses{};
+
+    for (std::size_t i = 0; i < values.size(); ++i)
+        responses[i] = measure_decay_response(values[i], values[i]);
+
+    for (const auto &resp : responses) {
+        if (resp.minCoeff < 0.015) {
+            std::cerr << "FDN decay floor too low: " << resp.minCoeff << std::endl;
+            return false;
+        }
+    }
+
+    if (!(responses[1].energy > responses[0].energy * 1.03)) {
+        std::cerr << "Energy at regen/decay 0.5 did not exceed 0.1 setting" << std::endl;
+        return false;
+    }
+    if (!(responses[2].energy > responses[1].energy * 1.06)) {
+        std::cerr << "Energy at regen/decay 0.9 did not exceed 0.5 setting" << std::endl;
+        return false;
+    }
+
+    if (!(responses[2].maxCoeff - responses[0].maxCoeff > 0.05)) {
+        std::cerr << "FDN decay coefficients lack sufficient spread" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -241,5 +361,7 @@ int main() {
         return 2;
     if (!test_quantum_dither_energy())
         return 3;
+    if (!test_decay_regen_response())
+        return 4;
     return 0;
 }

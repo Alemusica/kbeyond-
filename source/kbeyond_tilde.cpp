@@ -418,6 +418,7 @@ void t_kbeyond::update_decay() {
     dampMF_mul = lerp(1.0, 0.45, dampMFNorm);
     dampHF_mul = lerp(1.0, 0.12, dampHFNorm);
     double minDecay = 0.05;
+    double baseTau = std::max(rt60, minDecay);
     for (int i = 0; i < N; ++i) {
         double delaySamples = fdn_len[i];
         double delaySeconds = sr > 0.0 ? delaySamples / sr : 0.0;
@@ -426,12 +427,19 @@ void t_kbeyond::update_decay() {
             if (regenNorm <= 0.0) {
                 gain = 0.0;
             } else if (rt60 > 0.0) {
-                double regenScale = lerp(0.05, 1.0, regenNorm);
-                double tau = std::max(rt60 * regenScale, minDecay);
+                double regenWarp = std::pow(regenNorm, 0.65);
+                double timeScale = lerp(0.45, 1.0, regenWarp);
+                double tau = baseTau * timeScale;
                 double exponent = (-3.0 * delaySeconds) / tau;
-                gain = std::pow(10.0, exponent);
+                double timeGain = std::pow(10.0, exponent);
+                double blend = lerp(0.3, 0.85, regenWarp);
+                double mixedGain = lerp(regenNorm, timeGain, blend);
+                double floorGain = lerp(0.02, 0.72, regenWarp);
+                gain = std::max(mixedGain, floorGain);
             } else {
-                gain = regenNorm;
+                double regenWarp = std::pow(regenNorm, 0.65);
+                double floorGain = lerp(0.02, 0.72, regenWarp);
+                gain = std::max(regenNorm, floorGain);
             }
         }
         fdn_decay[i] = clampd(gain, 0.0, 0.99995);
