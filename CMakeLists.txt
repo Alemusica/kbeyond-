@@ -54,6 +54,7 @@ endif()
 # ====== UNICA DEFINIZIONE TARGET ======
 add_library(kbeyond_tilde MODULE
   source/kbeyond_tilde.cpp
+  source/dsp/prime_modes.cpp
 )
 
 target_compile_features(kbeyond_tilde PRIVATE cxx_std_17)
@@ -124,7 +125,8 @@ if(KBEYOND_BUILD_TESTS)
     enable_testing()
     add_executable(kbeyond_tests
         tests/early_reflections_test.cpp
-        source/kbeyond_tilde.cpp)
+        source/kbeyond_tilde.cpp
+        source/dsp/prime_modes.cpp)
     target_compile_definitions(kbeyond_tests PRIVATE KBEYOND_UNIT_TEST)
     target_include_directories(kbeyond_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source)
     target_compile_features(kbeyond_tests PRIVATE cxx_std_17)
