@@ -92,8 +92,12 @@ void t_kbeyond::setup_early() {
     if (patternCount <= 0)
         patternCount = 1;
     auto tapPattern = make_pattern(modeER, static_cast<std::size_t>(patternCount), 0x1001u);
-    auto laserMidPattern = make_pattern(modeMid, kbeyond::dsp::kLaserTaps, 0x5001u);
-    auto laserSidePattern = make_pattern(modeSide, kbeyond::dsp::kLaserTaps, 0x5002u);
+    std::vector<double> laserMidPattern;
+    std::vector<double> laserSidePattern;
+#if KBEYOND_ENABLE_LASER
+    laserMidPattern = make_pattern(modeMid, kbeyond::dsp::kLaserTaps, 0x5001u);
+    laserSidePattern = make_pattern(modeSide, kbeyond::dsp::kLaserTaps, 0x5002u);
+#endif
     earlySection.setup(sr, size, laserFocus, tapPattern, laserMidPattern, laserSidePattern);
     earlySection.resetState();
 }
@@ -120,19 +124,27 @@ void t_kbeyond::render_early(double inL,
 #endif
 
 void t_kbeyond::update_laser_gate() {
+#if KBEYOND_ENABLE_LASER
     earlySection.updateGate(laserGate);
+#endif
 }
 
 void t_kbeyond::update_laser_window() {
+#if KBEYOND_ENABLE_LASER
     earlySection.updateWindow(laserWindow, sr);
+#endif
 }
 
 void t_kbeyond::update_laser_phase_inc() {
+#if KBEYOND_ENABLE_LASER
     earlySection.updatePhaseIncrement(laserFocus, sr);
+#endif
 }
 
 void t_kbeyond::update_laser_envelope() {
+#if KBEYOND_ENABLE_LASER
     earlySection.updateEnvelopeCoefficients(sr);
+#endif
 }
 
 void t_kbeyond::setup_fdn() {
@@ -847,7 +859,11 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
 
         double earlyL = 0.0;
         double earlyR = 0.0;
+#if KBEYOND_ENABLE_LASER
         double clusterAmt = clampd(x->laser, 0.0, 1.0);
+#else
+        double clusterAmt = 0.0;
+#endif
         x->earlySection.render(predOutL,
                                predOutR,
                                widthNorm,
@@ -857,8 +873,6 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
                                earlyL,
                                earlyR,
                                x->rng);
-
-        double qMix = x->earlySection.computeQSwitchMix(clusterAmt, x->laserDiffusion);
 
         std::array<double, t_kbeyond::N> vec {};
         kbeyond::dsp::read_lines(x->fdnState,
@@ -870,12 +884,17 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
                                  vec);
 
         x->apply_diffusion(vec, x->fdnState.feedback);
+#if KBEYOND_ENABLE_LASER
+        double qMix = x->earlySection.computeQSwitchMix(clusterAmt, x->laserDiffusion);
         if (qMix > 0.0) {
             std::array<double, t_kbeyond::N> alt {};
             kbeyond::dsp::mixing::apply_walsh_hadamard16(vec, alt);
             for (int l = 0; l < t_kbeyond::N; ++l)
                 x->fdnState.feedback[l] = lerp(x->fdnState.feedback[l], alt[l], qMix);
         }
+#else
+        (void)clusterAmt;
+#endif
         x->apply_quantum_walk(x->fdnState.feedback);
 
         double tailMid = 0.0;
