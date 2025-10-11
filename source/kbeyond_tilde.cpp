@@ -53,6 +53,9 @@ void t_kbeyond::setup_sr(double newsr) {
     rangeEnv = motionDetector.range();
     dopplerEnv = motionDetector.doppler();
     spreadEnv = motionDetector.spread();
+    dryLevelEnv = 0.0;
+    wetLevelEnv = 0.0;
+    wetMakeup = 1.0;
     apply_width(clampd(width, 0.0, 2.0));
 }
 
@@ -726,6 +729,8 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
     double mix = clampd(x->mix, 0.0, 1.0);
     double earlyAmt = clampd(x->early, 0.0, 1.0);
     double focusAmt = clampd(x->focus, 0.0, 1.0);
+    double dryGainBase = std::cos(0.5 * M_PI * mix);
+    double wetGainBase = std::sin(0.5 * M_PI * mix);
 
     double baseModDepth = clampd(x->moddepth, 0.0, 32.0);
     double moddepth = clampd(baseModDepth * (1.0 + motionAmt * 0.65 * dopplerEnv), 0.0, 32.0);
@@ -818,10 +823,36 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         double wetL = earlyL + tailL;
         double wetR = earlyR + tailR;
 
+        double dryMag = 0.5 * (std::fabs(dryL) + std::fabs(dryR));
+        double wetMag = 0.5 * (std::fabs(wetL) + std::fabs(wetR));
+        constexpr double envCoef = 0.995;
+        x->dryLevelEnv = lerp(dryMag, x->dryLevelEnv, envCoef);
+        x->wetLevelEnv = lerp(wetMag, x->wetLevelEnv, envCoef);
+
+        double compTarget = 1.0;
+        if (mix > 0.0 && x->wetLevelEnv > 1.0e-7) {
+            double numer = (x->dryLevelEnv > 1.0e-7) ? x->dryLevelEnv : x->wetLevelEnv;
+            double ratio = numer / x->wetLevelEnv;
+            compTarget = clampd(ratio, 0.75, 2.5);
+        }
+        constexpr double makeupCoef = 0.9975;
+        x->wetMakeup = lerp(compTarget, x->wetMakeup, makeupCoef);
+
+        double wetGain = wetGainBase;
+        if (mix > 0.0) {
+            double makeup = 1.0 + mix * (x->wetMakeup - 1.0);
+            wetGain *= makeup;
+        }
+
+        double dryOutL = dryGainBase * dryL;
+        double dryOutR = dryGainBase * dryR;
+        double wetOutL = wetGain * wetL;
+        double wetOutR = wetGain * wetR;
+
         if (outL)
-            outL[i] = lerp(dryL, wetL, mix);
+            outL[i] = dryOutL + wetOutL;
         if (outR)
-            outR[i] = lerp(dryR, wetR, mix);
+            outR[i] = dryOutR + wetOutR;
     }
 
     x->rangeEnv = clampd(x->motionDetector.range(), 0.0, 1.0);
