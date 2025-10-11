@@ -26,12 +26,9 @@ foreach(candidate IN LISTS _c74_candidates)
   endif()
 endforeach()
 
-# Alcune snapshot del Max SDK (in particolare i checkout git) possono usare
-# layout leggermente diversi. Come fallback cerchiamo qualsiasi percorso che
-# contenga `c74support/max-includes/ext.h` al suo interno.
+# Fallback: cerca ext.h ovunque sotto MAX_SDK_ROOT
 if (NOT C74SUPPORT)
-  file(GLOB_RECURSE _ext_h_paths LIST_DIRECTORIES FALSE
-    "${MAX_SDK_ROOT}/*.h")
+  file(GLOB_RECURSE _ext_h_paths LIST_DIRECTORIES FALSE "${MAX_SDK_ROOT}/*.h")
   foreach(_ext_h IN LISTS _ext_h_paths)
     if (_ext_h MATCHES "/c74support/max-includes/ext\\.h$")
       list(APPEND _c74support_hits "${_ext_h}")
@@ -54,60 +51,72 @@ if (NOT EXISTS "${C74SUPPORT}/msp-includes/z_dsp.h")
   message(FATAL_ERROR "z_dsp.h non trovato sotto ${C74SUPPORT}/msp-includes")
 endif()
 
-add_library(kbeyond~ MODULE
-    source/kbeyond_tilde.cpp
+# ====== UNICA DEFINIZIONE TARGET ======
+add_library(kbeyond_tilde MODULE
+  source/kbeyond_tilde.cpp
 )
 
-target_compile_features(kbeyond~ PRIVATE cxx_std_17)
+target_compile_features(kbeyond_tilde PRIVATE cxx_std_17)
 
-target_include_directories(kbeyond~ PRIVATE
-    ${C74SUPPORT}/max-includes
-    ${C74SUPPORT}/msp-includes
-    ${CMAKE_CURRENT_SOURCE_DIR}/source
+target_include_directories(kbeyond_tilde PRIVATE
+  ${C74SUPPORT}/max-includes
+  ${C74SUPPORT}/msp-includes
+  ${CMAKE_CURRENT_SOURCE_DIR}/source
 )
 
-set_target_properties(kbeyond~ PROPERTIES
-    PREFIX ""
-    OUTPUT_NAME "kbeyond~"
+set_target_properties(kbeyond_tilde PROPERTIES
+  PREFIX ""
+  OUTPUT_NAME "kbeyond~"
 )
 
 if(APPLE)
-    target_compile_definitions(kbeyond~ PRIVATE "C74_EXPORT=__attribute__((visibility(\"default\")))")
-    set_target_properties(kbeyond~ PROPERTIES
-        BUNDLE TRUE
-        BUNDLE_EXTENSION "mxo"
-        SUFFIX ".mxo"
+  target_compile_definitions(kbeyond_tilde PRIVATE "C74_EXPORT=__attribute__((visibility(\"default\")))")
+  set_target_properties(kbeyond_tilde PROPERTIES
+    BUNDLE TRUE
+    BUNDLE_EXTENSION "mxo"
+    SUFFIX ".mxo"
+  )
+
+  # NIENTE framework Max: risolvi i simboli a runtime (robusto su macOS)
+  target_link_options(kbeyond_tilde PRIVATE
+    "-Wl,-undefined,dynamic_lookup"
+    "-Wl,-dead_strip"
+    "-Wl,-headerpad_max_install_names"
+  )
+
+  target_link_libraries(kbeyond_tilde PRIVATE
+    "-framework Cocoa"
+  )
+
+  # Firma post-build (opzionale)
+  set(CODESIGN_IDENTITY "" CACHE STRING "codesign identity for macOS")
+  if (CODESIGN_IDENTITY)
+    add_custom_command(TARGET kbeyond_tilde POST_BUILD
+      COMMAND /usr/bin/codesign -s "${CODESIGN_IDENTITY}" --deep --force --timestamp=none
+              "$<TARGET_BUNDLE_DIR:kbeyond_tilde>"
+      COMMENT "Code signing kbeyond~.mxo with identity: ${CODESIGN_IDENTITY}"
+      VERBATIM
     )
-    target_link_directories(kbeyond~ PRIVATE
-        ${C74SUPPORT}/msp-includes
-    )
-    target_link_options(kbeyond~ PRIVATE
-        "-F${C74SUPPORT}/max-includes"
-    )
-    target_link_libraries(kbeyond~ PRIVATE
-        "-framework Carbon"
-        "-framework Cocoa"
-        "-framework MaxAPI"
-        "-framework MaxAudioAPI"
-    )
+  endif()
+
 elseif(WIN32)
-    target_compile_definitions(kbeyond~ PRIVATE "C74_EXPORT=__declspec(dllexport)" WIN_VERSION=1)
-    set_target_properties(kbeyond~ PROPERTIES SUFFIX ".mxe64")
-    target_link_directories(kbeyond~ PRIVATE
-        ${C74SUPPORT}/max-includes
-        ${C74SUPPORT}/msp-includes
-    )
-    target_link_libraries(kbeyond~ PRIVATE
-        MaxAPI
-        MaxAudioAPI
-    )
+  target_compile_definitions(kbeyond_tilde PRIVATE "C74_EXPORT=__declspec(dllexport)" WIN_VERSION=1)
+  set_target_properties(kbeyond_tilde PROPERTIES SUFFIX ".mxe64")
+  target_link_directories(kbeyond_tilde PRIVATE
+    ${C74SUPPORT}/max-includes
+    ${C74SUPPORT}/msp-includes
+  )
+  target_link_libraries(kbeyond_tilde PRIVATE
+    MaxAPI
+    MaxAudioAPI
+  )
 else()
-    target_compile_definitions(kbeyond~ PRIVATE "C74_EXPORT=")
+  target_compile_definitions(kbeyond_tilde PRIVATE "C74_EXPORT=")
 endif()
 
-target_compile_options(kbeyond~ PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/EHsc /Zc:__cplusplus /permissive->
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-fvisibility=hidden>
+target_compile_options(kbeyond_tilde PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/EHsc /Zc:__cplusplus /permissive->
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-fvisibility=hidden>
 )
 
 option(KBEYOND_BUILD_TESTS "Build kbeyond~ unit tests" OFF)
