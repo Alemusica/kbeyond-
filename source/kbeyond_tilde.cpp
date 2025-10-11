@@ -836,9 +836,11 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         double compTarget = 1.0;
         if (mix > 0.0) {
             constexpr double eps = 1.0e-12;
-            constexpr double makeupMin = 0.5;
+            constexpr double makeupMin = 1.0;
             constexpr double makeupMax = 8.0;
             double ratio = std::sqrt((x->dryEnergyEnv + eps) / (x->wetEnergyEnv + eps));
+            // Never allow the compensation to dip below unity when the wet tail dominates.
+            ratio = std::max(ratio, 1.0);
             // Clamp to a safe yet generous range so quiet tails are lifted without runaway gain.
             compTarget = clampd(ratio, makeupMin, makeupMax);
         }
@@ -846,7 +848,9 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         x->wetMakeup = lerp(compTarget, x->wetMakeup, makeupCoef);
 
         double wetGain = wetGainBase;
-        if (mix > 0.0) {
+        if (mix >= 1.0) {
+            wetGain = 1.0;
+        } else if (mix > 0.0) {
             double makeup = 1.0 + mix * (x->wetMakeup - 1.0);
             wetGain *= makeup;
         }
