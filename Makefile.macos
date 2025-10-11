@@ -1,0 +1,26 @@
+# Simplified build recipe for kbeyond~ on macOS
+# Requires MAX_SDK_ROOT to point to the Max SDK root.
+
+SDK ?= $(MAX_SDK_ROOT)
+SRC := source/kbeyond_tilde.cpp
+OUT := build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~
+CXX := clang++
+CXXFLAGS := -std=c++17 -arch x86_64 -fPIC -stdlib=libc++ -mmacosx-version-min=10.13 \
+    -I$(SDK)/source/c74support/max-includes \
+    -I$(SDK)/source/c74support/msp-includes \
+    -Isource
+LDFLAGS := -bundle -undefined dynamic_lookup -arch x86_64 \
+    -F$(SDK)/source/c74support/max-includes \
+    -framework Carbon -framework Cocoa -framework MaxAPI -framework MaxAudioAPI
+
+all: $(OUT)
+
+$(OUT): $(SRC)
+	@echo "[macOS] building kbeyond~ bundle"
+	@mkdir -p $(dir $(OUT))
+	$(CXX) $(CXXFLAGS) $(SRC) $(LDFLAGS) -o $(OUT)
+
+clean:
+	rm -rf build/macos
+
+.PHONY: all clean

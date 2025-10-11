@@ -1,21 +1,20 @@
 #pragma once
 // kbeyond_tilde.h
 // Max/MSP external: "kbeyond~" — a spacious FDN reverb inspired by kBeyond
-// MIT-like license for this example. Use at your own risk.
+// MIT License.
 //
-// Build: Max 8 SDK (msp), C++17 (or C++11), x64
+// Build: Max 8 SDK (msp), C++17, x64
 // Object name: kbeyond~
 // Inlets:  2 (signal L/R)
 // Outlets: 2 (signal L/R)
 // Attributes (0..1 unless specified):
-//   @regen, @derez, @filter, @early, @predelay, @mix,
-//   @width(0.5..2.0), @size(0..1), @color(-1..+1), @modrate(Hz), @moddepth(samples),
+//   @regen, @derez, @filter, @early, @predelay (seconds), @mix,
+//   @width(0..2), @size(0..1), @color(-1..+1), @modrate(Hz), @moddepth(samples),
 //   @phiweight(0..1)
 // Notes:
 //  - Delay network is a 16x16 FDN with Householder(φ) mixing (computed on the fly).
 //  - Early reflections are φ-spaced; width via M/S shuffler.
-//  - "derez" here controls pre-FDN bandwidth (brickwall-lite). A more advanced
-//    decimator+Bézier+sinc can be dropped in later if desired.
+//  - "derez" here controls pre-FDN bandwidth.
 
 extern "C" {
 #include "ext.h"
@@ -23,21 +22,24 @@ extern "C" {
 #include "z_dsp.h"
 }
 
+#ifndef C74_EXPORT
+#define C74_EXPORT
+#endif
+
 #include <vector>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <algorithm>
-#include <random>
 
-// Forward decls
-typedef struct _kbeyond t_kbeyond;
+struct t_kbeyond;
+
 void *kbeyond_new(t_symbol *s, long argc, t_atom *argv);
 void kbeyond_free(t_kbeyond *x);
 void kbeyond_assist(t_kbeyond *x, void *b, long m, long a, char *s);
 void kbeyond_dsp64(t_kbeyond *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags);
 void kbeyond_perform64(t_kbeyond *x, t_object *dsp64, double **ins, long nin, double **outs, long nout, long sampleframes, long flags, void *userparam);
-void ext_main(void *r);
+void C74_EXPORT ext_main(void *r);
 
 // ------------------------------- Helpers
 static inline double clampd(double v, double lo, double hi) {
@@ -58,24 +60,25 @@ struct DelayLine {
     DelayLine() {}
     void setup(size_t len) { buf.assign(len, 0.0); w = 0; }
     inline double readFrac(double delaySamp) const {
-        // Read delay using linear interpolation, delaySamp in [1, len-2]
         size_t len = buf.size();
+        if (len == 0) return 0.0;
         double readPos = (double)w - delaySamp;
-        // wrap to [0, len)
         readPos -= std::floor(readPos / (double)len) * (double)len;
         long i0 = (long)readPos;
-        long i1 = (i0 + 1) % len;
+        long i1 = (i0 + 1) % (long)len;
         double frac = readPos - (double)i0;
-        return buf[i0] + (buf[i1] - buf[i0]) * frac;
+        return buf[(size_t)i0] + (buf[(size_t)i1] - buf[(size_t)i0]) * frac;
     }
     inline double readInt(long delaySamp) const {
         size_t len = buf.size();
+        if (len == 0) return 0.0;
         long rp = w - delaySamp;
         while (rp < 0) rp += (long)len;
-        return buf[rp % len];
+        return buf[(size_t)(rp % (long)len)];
     }
     inline void write(double x) {
-        buf[w] = x;
+        if (buf.empty()) return;
+        buf[(size_t)w] = x;
         w = (w + 1) % (long)buf.size();
     }
     inline size_t size() const { return buf.size(); }
@@ -87,8 +90,7 @@ struct Tilt {
     double a = 0.0;
     void set(double coef) { a = clampd(coef, -0.999, 0.999); }
     inline double process(double x) {
-        // y = x + a*(x - z); z = x; => high-shelf-ish tilt around Nyquist/4-ish
-        double y = x + a * (x - z);
+        double y = x + a * (x - z); // Householder tail tone tilt
         z = x;
         return y;
     }
@@ -109,7 +111,7 @@ struct OnePoleLP {
 };
 
 // ------------------------------- Main object
-struct _kbeyond {
+struct t_kbeyond {
     t_pxobject      ob;
 
     // Parameters
@@ -117,7 +119,7 @@ struct _kbeyond {
     double derez     = 1.0;
     double filter    = 0.6;
     double early     = 0.3;
-    double predelay  = 0.05;
+    double predelay  = 0.05; // seconds
     double mix       = 0.5;
 
     double width     = 1.2;
@@ -138,22 +140,23 @@ struct _kbeyond {
 
     // Early reflections
     static const int kEarlyTaps = 12;
-    DelayLine earlyBufL, earlyBufR;
-    std::array<long, kEarlyTaps> earlyDelL {};
-    std::array<long, kEarlyTaps> earlyDelR {};
+    DelayLine earlyBuf;
+    std::array<long, kEarlyTaps> earlyDel {};
     std::array<double, kEarlyTaps> earlyGain {};
+    std::array<double, kEarlyTaps> earlyPan {};
 
     // FDN
     static const int N = 16;
     std::array<DelayLine, N> fdn;
-    std::array<double, N>    fdn_len {};          // nominal lengths (samples)
-    std::array<double, N>    fdn_read {};         // current read length with modulation
-    std::array<double, N>    fdn_phase {};        // LFO phase
-    std::array<double, N>    fdn_phaseInc {};     // LFO increment
-    std::array<double, N>    fdn_out {};          // outputs of lines (before mix)
-    std::array<double, N>    fdn_fb {};           // feedback vector (after Householder)
-    std::array<Tilt, N>      fdn_tilt {};         // per-line tilt in feedback
-    std::array<OnePoleLP, N> fdn_lp {};           // per-line LP for "filter/derez"
+    std::array<double, N>    fdn_len {};
+    std::array<double, N>    fdn_read {};
+    std::array<double, N>    fdn_phase {};
+    std::array<double, N>    fdn_phaseInc {};
+    std::array<double, N>    fdn_out {};
+    std::array<double, N>    fdn_fb {};
+    std::array<Tilt, N>      fdn_tilt {};
+    std::array<OnePoleLP, N> fdn_lp {};
+    std::array<double, N>    inWeights {};
 
     // Output mapping
     std::array<double, N> outWeightsL {};
@@ -170,6 +173,7 @@ struct _kbeyond {
     void setup_predelay();
     void setup_early();
     void setup_fdn();
+    void refresh_filters();
     void update_householder();
     void update_output_weights();
     void update_modulators();
@@ -178,3 +182,4 @@ struct _kbeyond {
         return (double)(rng & 0xFFFFFF) * 1.0e-12 * (1.0/16777216.0);
     }
 };
+
