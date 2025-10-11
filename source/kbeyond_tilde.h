@@ -185,6 +185,8 @@ struct t_kbeyond {
     std::array<double, N>    uwalkPhase {};
     std::array<double, N>    uwalkPhaseInc {};
     std::array<double, N>    uwalkState {};
+    std::array<double, N>    qditherPhase {};
+    std::array<double, N>    qditherPhaseInc {};
 
     // Output mapping
     std::array<double, N> outBaseMid {};
@@ -224,6 +226,7 @@ struct t_kbeyond {
     void update_decay();
     void update_quantum_walk();
     void reset_quantum_walk();
+    void apply_quantum_dither(std::array<double, N> &vector);
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
     void apply_quantum_walk(std::array<double, N> &feedback);
     void render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);

@@ -142,6 +142,51 @@ bool test_mix_modes() {
     return true;
 }
 
+bool test_quantum_dither_energy() {
+    t_kbeyond x{};
+    x.setup_sr(48000.0);
+
+    std::array<double, t_kbeyond::N> state{};
+    for (int i = 0; i < t_kbeyond::N; ++i)
+        state[i] = (i % 3 == 0) ? 0.75 : ((i % 3 == 1) ? -0.5 : 0.25);
+
+    auto stateCopy = state;
+
+    x.coherence = 0.0;
+    x.update_quantum_walk();
+    x.apply_quantum_dither(stateCopy);
+    if (stateCopy != state) {
+        std::cerr << "Quantum dither modified state when coherence was zero" << std::endl;
+        return false;
+    }
+
+    x.coherence = 0.9;
+    x.uwalkRate = 0.0;
+    x.update_quantum_walk();
+    stateCopy = state;
+    x.apply_quantum_dither(stateCopy);
+    double eBase = energy(state);
+    double eAfter = energy(stateCopy);
+    if (std::abs(eAfter - eBase) > 1.0e-9) {
+        std::cerr << "Quantum dither energy mismatch at zero rate" << std::endl;
+        return false;
+    }
+
+    x.uwalkRate = 0.75;
+    x.update_quantum_walk();
+    double targetEnergy = energy(state);
+    for (int n = 0; n < 256; ++n) {
+        x.apply_quantum_dither(state);
+        double e = energy(state);
+        if (std::abs(e - targetEnergy) > 1.0e-9) {
+            std::cerr << "Quantum dither energy drift at iteration " << n << std::endl;
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -149,5 +194,7 @@ int main() {
         return 1;
     if (!test_mix_modes())
         return 2;
+    if (!test_quantum_dither_energy())
+        return 3;
     return 0;
 }

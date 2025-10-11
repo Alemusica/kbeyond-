@@ -271,6 +271,10 @@ void t_kbeyond::update_quantum_walk() {
         uwalkPhaseInc[i] = incBase * warp;
         if (rate <= 0.0)
             uwalkPhaseInc[i] = 0.0;
+        double ditherWarp = lerp(0.55, 1.45, idx);
+        qditherPhaseInc[i] = incBase * ditherWarp;
+        if (rate <= 0.0)
+            qditherPhaseInc[i] = 0.0;
     }
 }
 
@@ -282,23 +286,82 @@ void t_kbeyond::reset_quantum_walk() {
         if (uwalkPhase[i] < 0.0)
             uwalkPhase[i] += 2.0 * M_PI;
         uwalkState[i] = 0.0;
+        double ditherSeed = ((double)(i + 1) * g + 0.11) * 2.0 * M_PI;
+        qditherPhase[i] = std::fmod(ditherSeed, 2.0 * M_PI);
+        if (qditherPhase[i] < 0.0)
+            qditherPhase[i] += 2.0 * M_PI;
     }
     update_quantum_walk();
 }
 
+static inline double wrap_phase(double phase) {
+    if (phase >= 2.0 * M_PI)
+        phase -= 2.0 * M_PI;
+    else if (phase < 0.0)
+        phase += 2.0 * M_PI;
+    return phase;
+}
+
+void t_kbeyond::apply_quantum_dither(std::array<double, N> &vector) {
+    double coherenceAmt = clampd(coherence, 0.0, 1.0);
+    double maxAngle = lerp(0.0, 0.42, coherenceAmt * coherenceAmt);
+    bool advancePhaseOnly = (maxAngle <= 0.0);
+
+    auto rotate_pair = [&](int idx, int jdx, double angle) {
+        double c = std::cos(angle);
+        double s = std::sin(angle);
+        double a = vector[idx];
+        double b = vector[jdx];
+        vector[idx] = c * a - s * b;
+        vector[jdx] = s * a + c * b;
+    };
+
+    auto advance_phase = [&](int idx) {
+        qditherPhase[idx] = wrap_phase(qditherPhase[idx] + qditherPhaseInc[idx]);
+    };
+
+    if (!advancePhaseOnly) {
+        for (int start = 0; start < 2; ++start) {
+            for (int i = start; i < N; i += 2) {
+                int j = (i + 1) % N;
+                double phase = qditherPhase[i];
+                double angle = maxAngle * std::sin(phase);
+                rotate_pair(i, j, angle);
+                advance_phase(i);
+            }
+        }
+        for (int i = 0; i < N; ++i) {
+            int j = (i + 5) % N;
+            double phase = qditherPhase[(i + 3) % N];
+            double angle = 0.5 * maxAngle * std::sin(phase * 0.5);
+            rotate_pair(i, j, angle);
+        }
+    } else {
+        for (int i = 0; i < N; ++i)
+            advance_phase(i);
+    }
+}
+
 void t_kbeyond::apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output) {
+    const std::array<double, N> *source = &input;
+    std::array<double, N> dithered {};
+    if (clampd(coherence, 0.0, 1.0) > 0.0) {
+        dithered = input;
+        apply_quantum_dither(dithered);
+        source = &dithered;
+    }
     switch (mixMode) {
     case MixMode::Householder:
-        apply_householder<N>(u, input, output);
+        apply_householder<N>(u, *source, output);
         break;
     case MixMode::WHT:
-        apply_walsh_hadamard16(input, output);
+        apply_walsh_hadamard16(*source, output);
         break;
     case MixMode::Hybrid:
-        apply_hybrid_diffusion(u, input, output, diffusionScratch);
+        apply_hybrid_diffusion(u, *source, output, diffusionScratch);
         break;
     default:
-        apply_householder<N>(u, input, output);
+        apply_householder<N>(u, *source, output);
         break;
     }
 }
