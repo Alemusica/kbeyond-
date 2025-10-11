@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <vector>
+
+#include "dsp_assert.h"
 
 namespace kbeyond::dsp {
 
@@ -46,11 +50,54 @@ void EarlySection::setup(double sr,
         earlySin_[index] = std::sin(theta);
     };
 
+    dsp_assert_msg(tapPattern.empty() || std::is_sorted(tapPattern.begin(), tapPattern.end()),
+                   "Tap pattern must be sorted");
+
+    std::vector<long> uniqueTapDelays;
+    uniqueTapDelays.reserve(static_cast<std::size_t>(patternCount));
+    const long minTapSpacing = 2;
+    const long maxSample = static_cast<long>(std::floor(static_cast<double>(earlyBufMid_.size()) - 2.0));
+
+    const auto is_valid_delay = [&](long candidate) {
+        for (long prev : uniqueTapDelays) {
+            if (std::llabs(candidate - prev) < minTapSpacing)
+                return false;
+        }
+        return true;
+    };
+
+    const auto resolve_delay = [&](double samples) {
+        const long minSample = 1;
+        long base = clampl(static_cast<long>(std::floor(samples)), minSample, maxSample);
+        constexpr int offsets[] = {0, 1, -1, 2, -2, 3, -3, 4, -4};
+        for (int offset : offsets) {
+            long candidate = clampl(base + offset, minSample, maxSample);
+            if (is_valid_delay(candidate)) {
+                uniqueTapDelays.push_back(candidate);
+                return candidate;
+            }
+        }
+        for (long delta = minTapSpacing; delta < minTapSpacing + 32; ++delta) {
+            long up = clampl(base + delta, minSample, maxSample);
+            if (is_valid_delay(up)) {
+                uniqueTapDelays.push_back(up);
+                return up;
+            }
+            long down = clampl(base - delta, minSample, maxSample);
+            if (is_valid_delay(down)) {
+                uniqueTapDelays.push_back(down);
+                return down;
+            }
+        }
+        uniqueTapDelays.push_back(base);
+        return base;
+    };
+
     for (int p = 0; p < pairs; ++p) {
         const double idxNorm = get_pattern(p);
         double ms = baseMs * std::pow(kGoldenRatio, idxNorm * 1.2);
         ms = std::min(ms * scale, maxMs);
-        const long samp = static_cast<long>(clampd(std::floor(ms2samp(ms, sr)), 1.0, static_cast<double>(earlyBufMid_.size()) - 2.0));
+        const long samp = resolve_delay(ms2samp(ms, sr));
         const double gain = std::pow(0.72, static_cast<double>(p) + 1.0);
         const double panMag = 1.0 - idxNorm;
         const double panLeft = -panMag;
@@ -64,9 +111,29 @@ void EarlySection::setup(double sr,
         const double idxNorm = (center < static_cast<int>(tapPattern.size())) ? tapPattern[static_cast<std::size_t>(center)] : 0.65;
         double ms = baseMs * std::pow(kGoldenRatio, idxNorm);
         ms = std::min(ms * scale, maxMs);
-        const long samp = static_cast<long>(clampd(std::floor(ms2samp(ms, sr)), 1.0, static_cast<double>(earlyBufMid_.size()) - 2.0));
+        const long samp = resolve_delay(ms2samp(ms, sr));
         const double gain = std::pow(0.72, static_cast<double>(pairs) + 1.0);
         storeTap(center, samp, gain, 0.0);
+    }
+
+    if (!uniqueTapDelays.empty()) {
+        auto sorted = uniqueTapDelays;
+        std::sort(sorted.begin(), sorted.end());
+        for (std::size_t i = 1; i < sorted.size(); ++i)
+            dsp_assert_msg(sorted[i] - sorted[i - 1] >= minTapSpacing, "Tap spacing below minimum");
+    }
+
+    double energy = 0.0;
+    for (int tap = 0; tap < static_cast<int>(kEarlyTaps); ++tap) {
+        double wL = earlyGain_[static_cast<std::size_t>(tap)] * earlyCos_[static_cast<std::size_t>(tap)];
+        double wR = earlyGain_[static_cast<std::size_t>(tap)] * earlySin_[static_cast<std::size_t>(tap)];
+        energy += wL * wL + wR * wR;
+    }
+    dsp_assert_msg(energy > 0.0, "Early tap energy invalid");
+    if (energy > 0.0) {
+        const double scaleEnergy = 1.0 / std::sqrt(energy);
+        for (double &gain : earlyGain_)
+            gain *= scaleEnergy;
     }
 
     const double focusNorm = clampd(focus, 0.0, 1.0);

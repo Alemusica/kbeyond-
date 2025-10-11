@@ -6,6 +6,9 @@
 
 #include "buffers.h"
 #include "params.h"
+#ifdef KBEYOND_UNIT_TEST
+#include <cstddef>
+#endif
 
 namespace kbeyond::dsp {
 
@@ -36,6 +39,13 @@ struct EarlySection {
     double excite() const { return laserExcite_; }
 
     double computeQSwitchMix(double clusterAmt, double diffusion);
+
+#ifdef KBEYOND_UNIT_TEST
+    const std::array<long, kEarlyTaps> &debugTapDelays() const { return earlyDel_; }
+    const std::array<double, kEarlyTaps> &debugTapGains() const { return earlyGain_; }
+    const std::array<double, kEarlyTaps> &debugTapCos() const { return earlyCos_; }
+    const std::array<double, kEarlyTaps> &debugTapSin() const { return earlySin_; }
+#endif
 
 private:
     DelayLine earlyBufMid_{};
