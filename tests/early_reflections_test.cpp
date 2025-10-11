@@ -648,6 +648,87 @@ bool test_side_impulse_width_balance() {
     return true;
 }
 
+bool run_side_width_energy_test() {
+    t_kbeyond inst{};
+    inst.setup_sr(48000.0);
+    inst.mix = 1.0;
+    inst.motion = 0.0;
+    inst.moddepth = 0.0;
+    inst.laser = 0.0;
+    inst.early = 0.0;
+    inst.focus = 0.5;
+    inst.predelay = 0.0;
+    inst.setup_predelay();
+    inst.regen = 0.7;
+    inst.decay = 4.0;
+    inst.update_decay();
+    inst.width = 0.0;
+    inst.apply_width(inst.width);
+    inst.motionDetector.reset();
+
+    constexpr long blockSize = 32;
+    constexpr int settleBlocks = 128;
+    constexpr int widthSteps = 41;
+    constexpr double widthStep = 2.0 / static_cast<double>(widthSteps - 1);
+
+    std::array<double, blockSize> inL{};
+    std::array<double, blockSize> inR{};
+    std::array<double, blockSize> outL{};
+    std::array<double, blockSize> outR{};
+    double* ins[2] = {inL.data(), inR.data()};
+    double* outs[2] = {outL.data(), outR.data()};
+
+    double energyL = 0.0;
+    double energyR = 0.0;
+
+    auto accumulateBlock = [&]() {
+        for (long n = 0; n < blockSize; ++n) {
+            double l = outL[static_cast<std::size_t>(n)];
+            double r = outR[static_cast<std::size_t>(n)];
+            energyL += l * l;
+            energyR += r * r;
+        }
+    };
+
+    for (int step = 0; step < widthSteps; ++step) {
+        double widthTarget = widthStep * static_cast<double>(step);
+        inst.width = widthTarget;
+        inst.apply_width(widthTarget);
+
+        for (int b = 0; b < settleBlocks; ++b) {
+            std::fill(inL.begin(), inL.end(), 0.0);
+            std::fill(inR.begin(), inR.end(), 0.0);
+            kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+            accumulateBlock();
+        }
+
+        std::fill(inL.begin(), inL.end(), 0.0);
+        std::fill(inR.begin(), inR.end(), 0.0);
+        inL[0] = 1.0;
+        inR[0] = -1.0;
+        kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+        accumulateBlock();
+    }
+
+    for (int b = 0; b < settleBlocks; ++b) {
+        std::fill(inL.begin(), inL.end(), 0.0);
+        std::fill(inR.begin(), inR.end(), 0.0);
+        kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+        accumulateBlock();
+    }
+
+    const double eps = 1.0e-12;
+    double totalEnergy = std::max(energyL + energyR, eps);
+    double imbalance = std::abs(energyL - energyR) / totalEnergy;
+    if (imbalance > 0.03) {
+        std::cerr << "Side width sweep energy imbalance: imbalance=" << imbalance
+                  << " energyL=" << energyL << " energyR=" << energyR << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool test_wet_tail_makeup_balance() {
     constexpr long blockSize = 256;
     constexpr int tailBlocks = 6;
@@ -729,9 +810,11 @@ int main() {
         return 6;
     if (!test_side_impulse_width_balance())
         return 7;
-    if (!test_wet_tail_makeup_balance())
+    if (!run_side_width_energy_test())
         return 8;
-    if (!motion_tests::run_motion_moddepth_response())
+    if (!test_wet_tail_makeup_balance())
         return 9;
+    if (!motion_tests::run_motion_moddepth_response())
+        return 10;
     return 0;
 }
