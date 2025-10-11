@@ -7,6 +7,17 @@ endif()
 
 set(MAXSDK_ROOT $ENV{MAX_SDK_ROOT})
 
+set(MAXSDK_MAX_INCLUDES "${MAXSDK_ROOT}/source/c74support/max-includes")
+set(MAXSDK_MSP_INCLUDES "${MAXSDK_ROOT}/source/c74support/msp-includes")
+
+if(NOT EXISTS "${MAXSDK_MAX_INCLUDES}/ext.h")
+    message(FATAL_ERROR "Could not find ext.h in ${MAXSDK_MAX_INCLUDES}. Check that MAX_SDK_ROOT points to a valid Max SDK installation.")
+endif()
+
+if(NOT EXISTS "${MAXSDK_MSP_INCLUDES}/z_dsp.h")
+    message(FATAL_ERROR "Could not find z_dsp.h in ${MAXSDK_MSP_INCLUDES}. Check that MAX_SDK_ROOT points to a valid Max SDK installation.")
+endif()
+
 add_library(kbeyond~ MODULE
     source/kbeyond_tilde.cpp
 )
@@ -14,8 +25,8 @@ add_library(kbeyond~ MODULE
 target_compile_features(kbeyond~ PRIVATE cxx_std_17)
 
 target_include_directories(kbeyond~ PRIVATE
-    ${MAXSDK_ROOT}/source/c74support/max-includes
-    ${MAXSDK_ROOT}/source/c74support/msp-includes
+    ${MAXSDK_MAX_INCLUDES}
+    ${MAXSDK_MSP_INCLUDES}
     ${CMAKE_CURRENT_SOURCE_DIR}/source
 )
 
@@ -32,7 +43,7 @@ if(APPLE)
         SUFFIX ".mxo"
     )
     target_link_directories(kbeyond~ PRIVATE
-        ${MAXSDK_ROOT}/source/c74support/msp-includes
+        ${MAXSDK_MSP_INCLUDES}
     )
     target_link_options(kbeyond~ PRIVATE
         "-F${MAXSDK_ROOT}/source/c74support/max-includes"
