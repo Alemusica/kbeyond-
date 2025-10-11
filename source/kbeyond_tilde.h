@@ -139,6 +139,12 @@ struct t_kbeyond {
     double predelay  = 0.05; // seconds
     double mix       = 0.5;
 
+    double laser          = 0.0;  // 0..1 cluster amount
+    double laserFocus     = 0.55; // 0..1 cluster spread / chirp
+    double laserGate      = 0.35; // 0..1 excitation threshold
+    double laserWindow    = 0.35; // seconds, Q-switch window
+    double laserDiffusion = 0.65; // 0..1 diffusion boost
+
     double width     = 1.2;
     double size      = 0.6;
     double color     = 0.0;
@@ -159,12 +165,20 @@ struct t_kbeyond {
 
     // Early reflections
     static const int kEarlyTaps = 12;
+    static const int kLaserGroups = 3;
+    static const int kLaserTaps = 24;
     DelayLine earlyBufMid;
     DelayLine earlyBufSide;
     std::array<long, kEarlyTaps> earlyDel {};
     std::array<double, kEarlyTaps> earlyGain {};
     std::array<double, kEarlyTaps> earlyCos {};
     std::array<double, kEarlyTaps> earlySin {};
+    std::array<double, kLaserTaps> laserDelay {};
+    std::array<double, kLaserTaps> laserMidGain {};
+    std::array<double, kLaserTaps> laserSideGain {};
+    std::array<double, kLaserTaps> laserCos {};
+    std::array<double, kLaserTaps> laserSin {};
+    std::array<double, kLaserTaps> laserShape {};
 
     enum class MixMode { Householder = 0, WHT, Hybrid };
 
@@ -214,11 +228,29 @@ struct t_kbeyond {
     // RNG for tiny noise to avoid denormals
     uint32_t rng = 0x1234567u;
 
+    // Laser cluster + Q-switch state
+    double laserEnv = 0.0;
+    double laserExcite = 0.0;
+    double laserGateScaled = 0.02;
+    double laserPhase = 0.0;
+    double laserPhaseInc = 0.0;
+    double laserEnvAttack = 0.0;
+    double laserEnvRelease = 0.0;
+    double qswitchEnv = 0.0;
+    double qswitchAttack = 0.0;
+    double qswitchRelease = 0.0;
+    long   qswitchWindowSamples = 0;
+    long   qswitchCounter = 0;
+
     // Methods
     void setup_sr(double newsr);
     void setup_predelay();
     void setup_early();
     void setup_fdn();
+    void update_laser_gate();
+    void update_laser_window();
+    void update_laser_phase_inc();
+    void update_laser_envelope();
     void refresh_filters();
     void update_diffusion();
     void update_output_weights();

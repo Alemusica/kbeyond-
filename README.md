@@ -5,6 +5,7 @@
 ## Caratteristiche principali
 - 16 linee di ritardo con diffusore selezionabile: Householder(φ), Walsh-Hadamard o ibrido.
 - Predelay sensibile al sample-rate, riflessioni precoci φ-spaced con controllo stereo M/S.
+- Cluster "Laser" opzionale con tap chirp/m-sequence e Q-switch di diffusione per enfatizzare i primi 200–600 ms di coda.
 - Modulatori indipendenti per ciascuna linea FDN con parametri `@modrate` e `@moddepth`.
 - Controlli completi: `@regen @derez @filter @early @predelay @mix @width @size @color @modrate @moddepth @phiweight @mode_mix`.
 - Implementazione C++17, 64-bit only, compatibile con Max 8/9.
@@ -57,8 +58,15 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 
 ## Documentazione
 - `help/kbeyond~.maxhelp` mostra una catena minima `noise~ -> kbeyond~ -> ezdac~` con controllo degli attributi `@mix`, `@width` e `@mode_mix`.
-- `presets/kbeyond_presets.json` offre tre preset (Hall Larga, Plate Densa, Room Intima) per un richiamo rapido.
+- `presets/kbeyond_presets.json` include esempi aggiornati: oltre ai classici Hall/Plate/Room è presente "Laser Sweep" per esplorare il cluster laser.
 - `docs/roadmap_it.md` descrive le fasi di evoluzione previste, con criteri di accettazione per ciascuna milestone.
+
+### Attributi Laser
+- `@laser`: mix principale del cluster (0–1).
+- `@laserfocus`: controlla densità e curvatura chirp (0–1, ricampiona i tap).
+- `@lasergate`: soglia dell'envelope detector che accende il cluster (0–1).
+- `@laserwindow`: durata della finestra Q-switch (0.2–0.6 s, ricampiona i contatori).
+- `@laserdiffusion`: intensità dell'alternativa di diffusione durante il Q-switch (0–1).
 
 ### Modalità di diffusione (`@mode_mix`)
 - `householder`: matrice Householder pesata con φ, densa e leggermente colorata.
