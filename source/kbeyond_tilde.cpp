@@ -170,7 +170,8 @@ void t_kbeyond::update_modulators() {
 }
 
 void t_kbeyond::update_decay() {
-    double rt60 = decay;
+    double rt60 = std::max(decay, 0.0);
+    double regenNorm = clampd(regen, 0.0, 0.999);
     double dampLFNorm = clampd(dampLF, 0.0, 1.0);
     double dampMFNorm = clampd(dampMF, 0.0, 1.0);
     double dampHFNorm = clampd(dampHF, 0.0, 1.0);
@@ -181,11 +182,18 @@ void t_kbeyond::update_decay() {
     for (int i = 0; i < N; ++i) {
         double delaySamples = fdn_len[i];
         double delaySeconds = sr > 0.0 ? delaySamples / sr : 0.0;
-        double gain = 1.0;
-        if (rt60 > 0.0 && delaySeconds > 0.0) {
-            double tau = std::max(rt60, minDecay);
-            double exponent = (-3.0 * delaySeconds) / tau;
-            gain = std::pow(10.0, exponent);
+        double gain = 0.0;
+        if (delaySeconds > 0.0) {
+            if (regenNorm <= 0.0) {
+                gain = 0.0;
+            } else if (rt60 > 0.0) {
+                double regenScale = lerp(0.05, 1.0, regenNorm);
+                double tau = std::max(rt60 * regenScale, minDecay);
+                double exponent = (-3.0 * delaySeconds) / tau;
+                gain = std::pow(10.0, exponent);
+            } else {
+                gain = regenNorm;
+            }
         }
         fdn_decay[i] = clampd(gain, 0.0, 0.99995);
         double idx = (double)i / (double)std::max(1, N - 1);
@@ -213,7 +221,7 @@ t_max_err kbeyond_attr_set_double(t_kbeyond* x, void*, long argc, t_atom* argv, 
 }
 
 t_max_err kbeyond_attr_set_regen(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
-    return kbeyond_attr_set_double(x, attr, argc, argv, &x->regen, 0.0, 0.999, nullptr);
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->regen, 0.0, 0.999, &t_kbeyond::update_decay);
 }
 
 t_max_err kbeyond_attr_set_decay(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
@@ -348,7 +356,6 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
     double widthNorm = clampd(x->width, 0.0, 2.0);
     double mix = clampd(x->mix, 0.0, 1.0);
     double earlyAmt = clampd(x->early, 0.0, 1.0);
-    double regen = clampd(x->regen, 0.0, 0.999);
     double moddepth = clampd(x->moddepth, 0.0, 32.0);
 
     for (long i = 0; i < sampleframes; ++i) {
@@ -400,7 +407,7 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
             double high = fb - band;
             double mid = band - low;
             double damped = low * x->dampLF_mul + mid * x->dampMF_mul + high * x->dampHF_mul;
-            double feedback = damped * regen * x->fdn_decay[l];
+            double feedback = damped * x->fdn_decay[l];
             double injection = midIn * x->inWeights[l] + sideIn * x->outWeightsL[l] * 0.15;
             x->fdn[l].write(feedback + injection + x->tiny());
             tailL += x->fdn_out[l] * x->outWeightsL[l];
