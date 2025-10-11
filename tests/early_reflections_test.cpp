@@ -503,6 +503,72 @@ bool test_decay_regen_response() {
     return true;
 }
 
+bool test_wet_tail_makeup_balance() {
+    constexpr long blockSize = 256;
+    constexpr int tailBlocks = 6;
+    constexpr double impulseAmp = 1.0e-3;
+    const std::array<double, 3> mixes{0.25, 0.5, 0.75};
+    std::array<double, mixes.size()> tailRms{};
+
+    for (std::size_t idx = 0; idx < mixes.size(); ++idx) {
+        t_kbeyond inst{};
+        inst.setup_sr(48000.0);
+        inst.mix = mixes[idx];
+        inst.early = 0.0;
+        inst.predelay = 0.0;
+        inst.setup_predelay();
+        inst.decay = 4.0;
+        inst.update_decay();
+
+        std::array<double, blockSize> inL{};
+        std::array<double, blockSize> inR{};
+        std::array<double, blockSize> outL{};
+        std::array<double, blockSize> outR{};
+        double *ins[2] = {inL.data(), inR.data()};
+        double *outs[2] = {outL.data(), outR.data()};
+
+        for (long n = 0; n < blockSize; ++n) {
+            inL[n] = (n == 0) ? impulseAmp : 0.0;
+            inR[n] = inL[n];
+        }
+        kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+
+        std::array<double, blockSize> tailL{};
+        std::array<double, blockSize> tailR{};
+        for (int b = 0; b < tailBlocks; ++b) {
+            std::fill(inL.begin(), inL.end(), 0.0);
+            std::fill(inR.begin(), inR.end(), 0.0);
+            kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+            if (b == tailBlocks - 1) {
+                tailL = outL;
+                tailR = outR;
+            }
+        }
+
+        double energy = 0.0;
+        for (long n = 0; n < blockSize; ++n) {
+            double l = tailL[n];
+            double r = tailR[n];
+            energy += l * l + r * r;
+        }
+        double mean = energy / (2.0 * static_cast<double>(blockSize));
+        tailRms[idx] = std::sqrt(std::max(mean, 0.0));
+    }
+
+    constexpr double eps = 1.0e-12;
+    double reference = tailRms[1];
+    for (std::size_t idx = 0; idx < mixes.size(); ++idx) {
+        double ratio = (tailRms[idx] + eps) / (reference + eps);
+        double diffDb = 20.0 * std::log10(ratio);
+        if (std::abs(diffDb) > 1.0) {
+            std::cerr << "Wet tail makeup imbalance at mix=" << mixes[idx] << " diff=" << diffDb << " dB" << std::endl;
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -518,7 +584,9 @@ int main() {
         return 5;
     if (!motion_tests::run_motion_width_response())
         return 6;
-    if (!motion_tests::run_motion_moddepth_response())
+    if (!test_wet_tail_makeup_balance())
         return 7;
+    if (!motion_tests::run_motion_moddepth_response())
+        return 8;
     return 0;
 }

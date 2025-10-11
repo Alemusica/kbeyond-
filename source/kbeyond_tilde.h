@@ -159,6 +159,8 @@ struct t_kbeyond {
     double rangeEnv = 0.0;
     double dopplerEnv = 0.0;
     double spreadEnv = 0.5;
+    double dryEnergyEnv = 0.0;
+    double wetEnergyEnv = 0.0;
     double dryLevelEnv = 0.0;
     double wetLevelEnv = 0.0;
     double wetMakeup = 1.0;

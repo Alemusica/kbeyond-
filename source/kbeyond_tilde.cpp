@@ -53,6 +53,8 @@ void t_kbeyond::setup_sr(double newsr) {
     rangeEnv = motionDetector.range();
     dopplerEnv = motionDetector.doppler();
     spreadEnv = motionDetector.spread();
+    dryEnergyEnv = 0.0;
+    wetEnergyEnv = 0.0;
     dryLevelEnv = 0.0;
     wetLevelEnv = 0.0;
     wetMakeup = 1.0;
@@ -823,17 +825,22 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         double wetL = earlyL + tailL;
         double wetR = earlyR + tailR;
 
-        double dryMag = 0.5 * (std::fabs(dryL) + std::fabs(dryR));
-        double wetMag = 0.5 * (std::fabs(wetL) + std::fabs(wetR));
+        double dryEnergy = 0.5 * (dryL * dryL + dryR * dryR);
+        double wetEnergy = 0.5 * (wetL * wetL + wetR * wetR);
         constexpr double envCoef = 0.995;
-        x->dryLevelEnv = lerp(dryMag, x->dryLevelEnv, envCoef);
-        x->wetLevelEnv = lerp(wetMag, x->wetLevelEnv, envCoef);
+        x->dryEnergyEnv = lerp(dryEnergy, x->dryEnergyEnv, envCoef);
+        x->wetEnergyEnv = lerp(wetEnergy, x->wetEnergyEnv, envCoef);
+        x->dryLevelEnv = std::sqrt(std::max(x->dryEnergyEnv, 0.0));
+        x->wetLevelEnv = std::sqrt(std::max(x->wetEnergyEnv, 0.0));
 
         double compTarget = 1.0;
-        if (mix > 0.0 && x->wetLevelEnv > 1.0e-7) {
-            double numer = (x->dryLevelEnv > 1.0e-7) ? x->dryLevelEnv : x->wetLevelEnv;
-            double ratio = numer / x->wetLevelEnv;
-            compTarget = clampd(ratio, 0.75, 2.5);
+        if (mix > 0.0) {
+            constexpr double eps = 1.0e-12;
+            constexpr double makeupMin = 0.5;
+            constexpr double makeupMax = 8.0;
+            double ratio = std::sqrt((x->dryEnergyEnv + eps) / (x->wetEnergyEnv + eps));
+            // Clamp to a safe yet generous range so quiet tails are lifted without runaway gain.
+            compTarget = clampd(ratio, makeupMin, makeupMax);
         }
         constexpr double makeupCoef = 0.9975;
         x->wetMakeup = lerp(compTarget, x->wetMakeup, makeupCoef);
