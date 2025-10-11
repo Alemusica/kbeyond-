@@ -46,6 +46,13 @@ using t_max_err = int;
 #include <algorithm>
 
 #include "dsp/prime_modes.h"
+#include "dsp/params.h"
+#include "dsp/buffers.h"
+#include "dsp/filters.h"
+#include "dsp/early.h"
+#include "dsp/fdn.h"
+#include "dsp/decay.h"
+#include "dsp/mod.h"
 
 struct t_kbeyond;
 
@@ -57,153 +64,60 @@ void kbeyond_perform64(t_kbeyond *x, t_object *dsp64, double **ins, long nin, do
 void C74_EXPORT ext_main(void *r);
 
 // ------------------------------- Helpers
-static inline double clampd(double v, double lo, double hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
-}
-static inline long clampl(long v, long lo, long hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
-}
-static inline double lerp(double a, double b, double t) {
-    return a + (b - a) * t;
-}
-static inline double ms2samp(double ms, double sr) { return ms * 0.001 * sr; }
-
-// ------------------------------- DSP core state
-struct DelayLine {
-    std::vector<double> buf;
-    long w = 0;
-    DelayLine() {}
-    void setup(size_t len) { buf.assign(len, 0.0); w = 0; }
-    inline double readFrac(double delaySamp) const {
-        size_t len = buf.size();
-        if (len == 0) return 0.0;
-        double readPos = (double)w - delaySamp;
-        readPos -= std::floor(readPos / (double)len) * (double)len;
-        long i0 = (long)readPos;
-        long i1 = (i0 + 1) % (long)len;
-        double frac = readPos - (double)i0;
-        return buf[(size_t)i0] + (buf[(size_t)i1] - buf[(size_t)i0]) * frac;
-    }
-    inline double readInt(long delaySamp) const {
-        size_t len = buf.size();
-        if (len == 0) return 0.0;
-        long rp = w - delaySamp;
-        while (rp < 0) rp += (long)len;
-        return buf[(size_t)(rp % (long)len)];
-    }
-    inline void write(double x) {
-        if (buf.empty()) return;
-        buf[(size_t)w] = x;
-        w = (w + 1) % (long)buf.size();
-    }
-    inline size_t size() const { return buf.size(); }
-};
-
-// Small utility: one-pole tone tilt (acts as gentle high/low tilt depending on sign)
-struct Tilt {
-    double z = 0.0;
-    double a = 0.0;
-    void set(double coef) { a = clampd(coef, -0.999, 0.999); }
-    inline double process(double x) {
-        double y = x + a * (x - z); // Householder tail tone tilt
-        z = x;
-        return y;
-    }
-};
-
-struct OnePoleLP {
-    double a = 0.0, b = 0.0, z = 0.0;
-    void setCutoff(double sr, double cutoffHz) {
-        cutoffHz = clampd(cutoffHz, 1.0, sr * 0.45);
-        double x = std::exp(-2.0 * M_PI * cutoffHz / sr);
-        a = 1.0 - x;
-        b = x;
-    }
-    inline double process(double x) {
-        z = a * x + b * z;
-        return z;
-    }
-    void reset() { z = 0.0; }
-};
-
 // ------------------------------- Main object
 struct t_kbeyond {
-    static constexpr double kPredelayMaxSeconds = 0.5;
-    static constexpr double kPredelaySafetySamples = 16.0;
+    static constexpr double kPredelayMaxSeconds = kbeyond::dsp::kPredelayMaxSeconds;
+    static constexpr double kPredelaySafetySamples = kbeyond::dsp::kPredelaySafetySamples;
 
     t_pxobject      ob;
 
     // Parameters
-    double regen     = 0.7;
-    double derez     = 1.0;
-    double filter    = 0.6;
-    double early     = 0.3;
-    double focus     = 1.0;
-    double predelay  = 0.05; // seconds
-    double mix       = 0.5;
+    double regen     = kbeyond::dsp::AttributeDefaults::regen;
+    double derez     = kbeyond::dsp::AttributeDefaults::derez;
+    double filter    = kbeyond::dsp::AttributeDefaults::filter;
+    double early     = kbeyond::dsp::AttributeDefaults::early;
+    double focus     = kbeyond::dsp::AttributeDefaults::focus;
+    double predelay  = kbeyond::dsp::AttributeDefaults::predelay;
+    double mix       = kbeyond::dsp::AttributeDefaults::mix;
 
-    double laser          = 0.0;  // 0..1 cluster amount
-    double laserFocus     = 0.55; // 0..1 cluster spread / chirp
-    double laserGate      = 0.35; // 0..1 excitation threshold
-    double laserWindow    = 0.35; // seconds, Q-switch window
-    double laserDiffusion = 0.65; // 0..1 diffusion boost
+    double laser          = kbeyond::dsp::AttributeDefaults::laser;
+    double laserFocus     = kbeyond::dsp::AttributeDefaults::laserFocus;
+    double laserGate      = kbeyond::dsp::AttributeDefaults::laserGate;
+    double laserWindow    = kbeyond::dsp::AttributeDefaults::laserWindow;
+    double laserDiffusion = kbeyond::dsp::AttributeDefaults::laserDiffusion;
 
-    double width     = 1.2;
-    double size      = 0.6;
-    double color     = 0.0;
-    double modrate   = 0.15; // Hz
-    double moddepth  = 3.0;  // samples
-    double phiweight = 0.7;  // 0..1
-    double coherence = 0.8;  // 0..1
-    double uwalkRate = 0.25; // Hz
+    double width     = kbeyond::dsp::AttributeDefaults::width;
+    double size      = kbeyond::dsp::AttributeDefaults::size;
+    double color     = kbeyond::dsp::AttributeDefaults::color;
+    double modrate   = kbeyond::dsp::AttributeDefaults::modrate;
+    double moddepth  = kbeyond::dsp::AttributeDefaults::moddepth;
+    double phiweight = kbeyond::dsp::AttributeDefaults::phiweight;
+    double coherence = kbeyond::dsp::AttributeDefaults::coherence;
+    double uwalkRate = kbeyond::dsp::AttributeDefaults::uwalkRate;
 
     // SR / vector
     double sr = 48000.0;
     long   vs = 64;
 
     // Predelay
-    DelayLine predL, predR;
+    kbeyond::dsp::DelayLine predL, predR;
     long      maxPred = 16384;
     double    predSamps = 0.0;
 
-    // Early reflections
-    static const int kEarlyTaps = 12;
-    static const int kLaserGroups = 3;
-    static const int kLaserTaps = 24;
-    DelayLine earlyBufMid;
-    DelayLine earlyBufSide;
-    std::array<long, kEarlyTaps> earlyDel {};
-    std::array<double, kEarlyTaps> earlyGain {};
-    std::array<double, kEarlyTaps> earlyCos {};
-    std::array<double, kEarlyTaps> earlySin {};
-    std::array<double, kLaserTaps> laserDelay {};
-    std::array<double, kLaserTaps> laserMidGain {};
-    std::array<double, kLaserTaps> laserSideGain {};
-    std::array<double, kLaserTaps> laserCos {};
-    std::array<double, kLaserTaps> laserSin {};
-    std::array<double, kLaserTaps> laserShape {};
+    kbeyond::dsp::EarlySection earlySection;
 
-    enum class MixMode { Householder = 0, WHT, Hybrid };
+    using MixMode = kbeyond::dsp::MixMode;
 
     // FDN
-    static const int N = 16;
-    std::array<DelayLine, N> fdn;
-    std::array<double, N>    fdn_len {};
-    std::array<double, N>    fdn_read {};
-    std::array<double, N>    fdn_phase {};
-    std::array<double, N>    fdn_phaseInc {};
-    std::array<double, N>    fdn_out {};
-    std::array<double, N>    fdn_fb {};
-    std::array<Tilt, N>      fdn_tilt {};
-    std::array<OnePoleLP, N> fdn_lp {};
-    std::array<OnePoleLP, N> fdn_low {};
-    std::array<OnePoleLP, N> fdn_high {};
+    static const int N = static_cast<int>(kbeyond::dsp::kFdnSize);
+    static const int kEarlyTaps = static_cast<int>(kbeyond::dsp::kEarlyTaps);
+    static const int kLaserTaps = static_cast<int>(kbeyond::dsp::kLaserTaps);
+    kbeyond::dsp::FdnState fdnState;
+    std::array<kbeyond::dsp::Tilt, N>      fdn_tilt {};
+    std::array<kbeyond::dsp::OnePoleLP, N> fdn_lp {};
+    std::array<kbeyond::dsp::OnePoleLP, N> fdn_low {};
+    std::array<kbeyond::dsp::OnePoleLP, N> fdn_high {};
     std::array<double, N>    inWeights {};
-    std::array<double, N>    uwalkPhase {};
-    std::array<double, N>    uwalkPhaseInc {};
-    std::array<double, N>    uwalkState {};
-    std::array<double, N>    qditherPhase {};
-    std::array<double, N>    qditherPhaseInc {};
 
     // Output mapping
     std::array<double, N> outBaseMid {};
@@ -233,27 +147,12 @@ struct t_kbeyond {
     double dampLF   = 0.2;
     double dampMF   = 0.0;
     double dampHF   = 0.6;
-    double dampLF_mul = 1.0;
-    double dampMF_mul = 1.0;
-    double dampHF_mul = 1.0;
-    std::array<double, N> fdn_decay {};
+    kbeyond::dsp::DecayState decayState {};
 
     // RNG for tiny noise to avoid denormals
     uint32_t rng = 0x1234567u;
 
-    // Laser cluster + Q-switch state
-    double laserEnv = 0.0;
-    double laserExcite = 0.0;
-    double laserGateScaled = 0.02;
-    double laserPhase = 0.0;
-    double laserPhaseInc = 0.0;
-    double laserEnvAttack = 0.0;
-    double laserEnvRelease = 0.0;
-    double qswitchEnv = 0.0;
-    double qswitchAttack = 0.0;
-    double qswitchRelease = 0.0;
-    long   qswitchWindowSamples = 0;
-    long   qswitchCounter = 0;
+    kbeyond::dsp::ModState modState {};
 
     // Methods
     void setup_sr(double newsr);
@@ -274,12 +173,7 @@ struct t_kbeyond {
     void apply_quantum_dither(std::array<double, N> &vector);
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
     void apply_quantum_walk(std::array<double, N> &feedback);
-    void render_early(double inL, double inR, double widthNorm, double earlyAmt, double focusAmt, double &earlyL, double &earlyR);
     void update_injection_weights();
     std::vector<double> make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const;
-    inline double tiny() {
-        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
-        return (double)(rng & 0xFFFFFF) * 1.0e-12 * (1.0/16777216.0);
-    }
 };
 

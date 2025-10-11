@@ -250,8 +250,8 @@ DecayResponse measure_decay_response(double regenValue, double decayValue) {
     x.update_decay();
 
     DecayResponse response{};
-    response.minCoeff = *std::min_element(x.fdn_decay.begin(), x.fdn_decay.end());
-    response.maxCoeff = *std::max_element(x.fdn_decay.begin(), x.fdn_decay.end());
+    response.minCoeff = *std::min_element(x.decayState.perLine.begin(), x.decayState.perLine.end());
+    response.maxCoeff = *std::max_element(x.decayState.perLine.begin(), x.decayState.perLine.end());
 
     constexpr int frames = 48000;
     double widthNorm = clampd(x.width, 0.0, 2.0);
@@ -266,52 +266,54 @@ DecayResponse measure_decay_response(double regenValue, double decayValue) {
         double predLen = x.predSamps;
         double predOutL = x.predL.readFrac(predLen);
         double predOutR = x.predR.readFrac(predLen);
-        x.predL.write(inL + x.tiny());
-        x.predR.write(inR + x.tiny());
+        x.predL.write(inL + kbeyond::dsp::tiny_noise(x.rng));
+        x.predR.write(inR + kbeyond::dsp::tiny_noise(x.rng));
 
         double midIn = 0.5 * (predOutL + predOutR);
         double sideIn = 0.5 * (predOutL - predOutR);
 
         double earlyL = 0.0;
         double earlyR = 0.0;
-        x.render_early(predOutL, predOutR, widthNorm, earlyAmt, focusAmt, earlyL, earlyR);
+        double clusterAmt = clampd(x.laser, 0.0, 1.0);
+        x.earlySection.render(predOutL,
+                              predOutR,
+                              widthNorm,
+                              earlyAmt,
+                              focusAmt,
+                              clusterAmt,
+                              earlyL,
+                              earlyR,
+                              x.rng);
 
         std::array<double, t_kbeyond::N> vec{};
-        for (int l = 0; l < t_kbeyond::N; ++l) {
-            double mod = 0.0;
-            if (x.modrate > 0.0 && moddepth > 0.0) {
-                mod = std::sin(x.fdn_phase[l]) * moddepth;
-                x.fdn_phase[l] += x.fdn_phaseInc[l];
-                if (x.fdn_phase[l] > 2.0 * M_PI)
-                    x.fdn_phase[l] -= 2.0 * M_PI;
-            }
-            double read = clampd(x.fdn_len[l] + mod, 2.0, (double)x.fdn[l].size() - 3.0);
-            x.fdn_read[l] = read;
-            double sig = x.fdn[l].readFrac(read);
-            sig = x.fdn_tilt[l].process(sig);
-            sig = x.fdn_lp[l].process(sig);
-            vec[l] = sig;
-            x.fdn_out[l] = sig;
-        }
+        kbeyond::dsp::read_lines(x.fdnState,
+                                 moddepth,
+                                 x.modState.fdnPhase,
+                                 x.modState.fdnPhaseInc,
+                                 x.fdn_tilt,
+                                 x.fdn_lp,
+                                 vec);
 
-        x.apply_diffusion(vec, x.fdn_fb);
-        x.apply_quantum_walk(x.fdn_fb);
+        x.apply_diffusion(vec, x.fdnState.feedback);
+        x.apply_quantum_walk(x.fdnState.feedback);
 
         double tailL = 0.0;
         double tailR = 0.0;
-        for (int l = 0; l < t_kbeyond::N; ++l) {
-            double fb = x.fdn_fb[l];
-            double low = x.fdn_low[l].process(fb);
-            double band = x.fdn_high[l].process(fb);
-            double high = fb - band;
-            double mid = band - low;
-            double damped = low * x.dampLF_mul + mid * x.dampMF_mul + high * x.dampHF_mul;
-            double feedback = damped * x.fdn_decay[l];
-            double injection = midIn * x.inWeights[l] + sideIn * x.outWeightsL[l] * 0.15;
-            x.fdn[l].write(feedback + injection + x.tiny());
-            tailL += x.fdn_out[l] * x.outWeightsL[l];
-            tailR += x.fdn_out[l] * x.outWeightsR[l];
-        }
+        kbeyond::dsp::write_feedback(x.fdnState,
+                                     midIn,
+                                     sideIn,
+                                     x.rng,
+                                     x.inWeights,
+                                     x.outWeightsL,
+                                     x.outWeightsR,
+                                     x.decayState.perLine,
+                                     x.fdn_low,
+                                     x.fdn_high,
+                                     x.decayState.dampLF,
+                                     x.decayState.dampMF,
+                                     x.decayState.dampHF,
+                                     tailL,
+                                     tailR);
 
         double wetL = earlyL + tailL;
         double wetR = earlyR + tailR;
