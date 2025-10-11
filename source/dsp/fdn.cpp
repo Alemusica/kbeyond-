@@ -160,18 +160,18 @@ void write_feedback(FdnState &state,
                     double sideIn,
                     uint32_t &rng,
                     const std::array<double, kFdnSize> &inWeights,
-                    const std::array<double, kFdnSize> &outWeightsL,
-                    const std::array<double, kFdnSize> &outWeightsR,
+                    const std::array<double, kFdnSize> &sideWeights,
+                    const std::array<double, kFdnSize> &midWeights,
                     const std::array<double, kFdnSize> &decay,
                     std::array<filters::OnePoleLP, kFdnSize> &low,
                     std::array<filters::OnePoleLP, kFdnSize> &high,
                     double dampLF,
                     double dampMF,
                     double dampHF,
-                    double &tailL,
-                    double &tailR) {
-    tailL = 0.0;
-    tailR = 0.0;
+                    double &tailMid,
+                    double &tailSide) {
+    tailMid = 0.0;
+    tailSide = 0.0;
     for (int l = 0; l < static_cast<int>(kFdnSize); ++l) {
         const double fb = state.feedback[static_cast<std::size_t>(l)];
         const double lowBand = low[static_cast<std::size_t>(l)].process(fb);
@@ -181,10 +181,11 @@ void write_feedback(FdnState &state,
         const double damped = lowBand * dampLF + midBand * dampMF + highBand * dampHF;
         const double feedback = damped * decay[static_cast<std::size_t>(l)];
         const double injection = midIn * inWeights[static_cast<std::size_t>(l)] +
-                                 sideIn * outWeightsL[static_cast<std::size_t>(l)] * 0.15;
+                                 sideIn * sideWeights[static_cast<std::size_t>(l)] * 0.15;
         state.lines[static_cast<std::size_t>(l)].write(feedback + injection + tiny_noise(rng));
-        tailL += state.outputs[static_cast<std::size_t>(l)] * outWeightsL[static_cast<std::size_t>(l)];
-        tailR += state.outputs[static_cast<std::size_t>(l)] * outWeightsR[static_cast<std::size_t>(l)];
+        const double output = state.outputs[static_cast<std::size_t>(l)];
+        tailMid += output * midWeights[static_cast<std::size_t>(l)];
+        tailSide += output * sideWeights[static_cast<std::size_t>(l)];
     }
 }
 

@@ -80,6 +80,8 @@ void t_kbeyond::setup_predelay() {
     predR.setup(bufferLen);
     double maxDelay = std::max(0.0, (double)bufferLen - 4.0);
     predSamps = clampd(predelay * sr, 0.0, maxDelay);
+    if (predSamps < 1.0)
+        predSamps = 1.0;
 }
 
 void t_kbeyond::setup_early() {
@@ -170,13 +172,60 @@ void t_kbeyond::update_diffusion() {
     make_phi_vector<N>(u, clampd(phiweight, 0.0, 1.0));
 }
 
+void t_kbeyond::update_output_basis() {
+    double midNorm = 0.0;
+    for (int i = 0; i < N; ++i) {
+        double mid = outBaseMid[i];
+        midNorm += mid * mid;
+    }
+
+    if (midNorm <= 0.0) {
+        std::fill(outMidBasis.begin(), outMidBasis.end(), 0.0);
+        outMidBasis[0] = 1.0;
+    } else {
+        double invMid = 1.0 / std::sqrt(midNorm);
+        for (int i = 0; i < N; ++i)
+            outMidBasis[i] = outBaseMid[i] * invMid;
+    }
+
+    double dot = 0.0;
+    for (int i = 0; i < N; ++i)
+        dot += outMidBasis[i] * outBaseSide[i];
+
+    double sideNorm = 0.0;
+    for (int i = 0; i < N; ++i) {
+        double rawSide = outBaseSide[i] - dot * outMidBasis[i];
+        outWeightsSide[i] = rawSide;
+        sideNorm += rawSide * rawSide;
+    }
+
+    if (sideNorm <= 0.0) {
+        std::fill(outWeightsSide.begin(), outWeightsSide.end(), 0.0);
+        int idx0 = 0;
+        int idx1 = (N > 1) ? 1 : 0;
+        outWeightsSide[idx0] = outMidBasis[idx1];
+        if (idx1 != idx0)
+            outWeightsSide[idx1] = -outMidBasis[idx0];
+        else
+            outWeightsSide[idx0] = 1.0;
+        sideNorm = 0.0;
+        for (double v : outWeightsSide)
+            sideNorm += v * v;
+    }
+
+    double invSide = sideNorm > 0.0 ? 1.0 / std::sqrt(sideNorm) : 1.0;
+    for (double &v : outWeightsSide)
+        v *= invSide;
+}
+
 void t_kbeyond::apply_width(double widthNorm) {
+    update_output_basis();
     widthNorm = clampd(widthNorm, 0.0, 2.0);
     double normL = 0.0;
     double normR = 0.0;
     for (int i = 0; i < N; ++i) {
-        double mid = outBaseMid[i];
-        double side = outBaseSide[i];
+        double mid = outMidBasis[i];
+        double side = outWeightsSide[i];
         double wL = mid + widthNorm * side;
         double wR = mid - widthNorm * side;
         outWeightsL[i] = wL;
@@ -190,6 +239,28 @@ void t_kbeyond::apply_width(double widthNorm) {
         outWeightsL[i] *= scaleL;
         outWeightsR[i] *= scaleR;
     }
+}
+
+void t_kbeyond::mix_mid_side_to_lr(double tailMid, double tailSide, double widthNorm, double &outL, double &outR) const {
+    widthNorm = clampd(widthNorm, 0.0, 2.0);
+    double baseMid = 1.0;
+    double baseSide = widthNorm;
+    constexpr double eps = 1.0e-12;
+    double ratio = std::abs(tailSide) > eps ? std::abs(tailMid) / std::abs(tailSide) : 0.0;
+    constexpr double leakComp = 4.0;
+    double comp = 1.0 / (1.0 + leakComp * ratio);
+    double midGain = baseMid * comp;
+    double sideGain = baseSide;
+    double norm = std::sqrt(midGain * midGain + sideGain * sideGain);
+    if (norm <= 0.0) {
+        outL = tailMid;
+        outR = tailMid;
+        return;
+    }
+    midGain /= norm;
+    sideGain /= norm;
+    outL = midGain * tailMid + sideGain * tailSide;
+    outR = midGain * tailMid - sideGain * tailSide;
 }
 
 void t_kbeyond::update_output_weights() {
@@ -206,6 +277,7 @@ void t_kbeyond::update_output_weights() {
         outBaseMid[i] = mid;
         outBaseSide[i] = side;
     }
+    update_output_basis();
     apply_width(clampd(width, 0.0, 2.0));
 }
 
@@ -705,6 +777,8 @@ void kbeyond_dsp64(t_kbeyond *x, t_object *dsp64, short *count, double samplerat
     (void)count;
 }
 
+#endif // KBEYOND_UNIT_TEST
+
 void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double **outs, long nout, long sampleframes, long, void *) {
     if (!x || x->ob.z_disabled) {
         for (long ch = 0; ch < nout; ++ch) {
@@ -804,23 +878,27 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         }
         x->apply_quantum_walk(x->fdnState.feedback);
 
-        double tailL = 0.0;
-        double tailR = 0.0;
+        double tailMid = 0.0;
+        double tailSide = 0.0;
         kbeyond::dsp::write_feedback(x->fdnState,
                                      midIn,
                                      sideIn,
                                      x->rng,
                                      x->inWeights,
-                                     x->outWeightsL,
-                                     x->outWeightsR,
+                                     x->outWeightsSide,
+                                     x->outMidBasis,
                                      x->decayState.perLine,
                                      x->fdn_low,
                                      x->fdn_high,
                                      dampLFValue,
                                      dampMFValue,
                                      dampHFValue,
-                                     tailL,
-                                     tailR);
+                                     tailMid,
+                                     tailSide);
+
+        double tailL = 0.0;
+        double tailR = 0.0;
+        x->mix_mid_side_to_lr(tailMid, tailSide, widthNorm, tailL, tailR);
 
         double wetL = earlyL + tailL;
         double wetR = earlyR + tailR;
@@ -871,6 +949,7 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
     x->spreadEnv = clampd(x->motionDetector.spread(), 0.0, 1.0);
 }
 
+#ifndef KBEYOND_UNIT_TEST
 extern "C" C74_EXPORT void ext_main(void *r) {
     t_class *c = class_new("kbeyond~", (method)kbeyond_new, (method)kbeyond_free, sizeof(t_kbeyond), 0L, A_GIMME, 0);
 
