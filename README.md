@@ -58,6 +58,7 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 ## Documentazione
 - `help/kbeyond~.maxhelp` mostra una catena minima `noise~ -> kbeyond~ -> ezdac~` con controllo degli attributi `@mix` e `@width`.
 - `presets/kbeyond_presets.json` offre tre preset (Hall Larga, Plate Densa, Room Intima) per un richiamo rapido.
+- `docs/roadmap_it.md` descrive le fasi di evoluzione previste, con criteri di accettazione per ciascuna milestone.
 
 ## Note di implementazione DSP
 - Il predelay (`@predelay`) è espresso in secondi (0–0.5 s) e ricampionato al cambio di sample-rate.
