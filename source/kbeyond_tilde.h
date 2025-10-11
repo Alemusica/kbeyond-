@@ -145,6 +145,8 @@ struct t_kbeyond {
     double modrate   = 0.15; // Hz
     double moddepth  = 3.0;  // samples
     double phiweight = 0.7;  // 0..1
+    double coherence = 0.8;  // 0..1
+    double uwalkRate = 0.25; // Hz
 
     // SR / vector
     double sr = 48000.0;
@@ -180,6 +182,9 @@ struct t_kbeyond {
     std::array<OnePoleLP, N> fdn_low {};
     std::array<OnePoleLP, N> fdn_high {};
     std::array<double, N>    inWeights {};
+    std::array<double, N>    uwalkPhase {};
+    std::array<double, N>    uwalkPhaseInc {};
+    std::array<double, N>    uwalkState {};
 
     // Output mapping
     std::array<double, N> outBaseMid {};
@@ -217,7 +222,10 @@ struct t_kbeyond {
     void update_output_weights();
     void update_modulators();
     void update_decay();
+    void update_quantum_walk();
+    void reset_quantum_walk();
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
+    void apply_quantum_walk(std::array<double, N> &feedback);
     void render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);
     inline double tiny() {
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;

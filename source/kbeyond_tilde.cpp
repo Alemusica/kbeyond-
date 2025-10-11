@@ -64,6 +64,7 @@ void t_kbeyond::setup_sr(double newsr) {
     update_diffusion();
     update_output_weights();
     update_modulators();
+    update_quantum_walk();
 }
 
 void t_kbeyond::setup_predelay() {
@@ -165,6 +166,7 @@ void t_kbeyond::setup_fdn() {
         inWeights[i] = 0.9 / (double)N * (1.0 + 0.35 * std::sin(angle * 0.73 + 0.2));
     }
     update_decay();
+    reset_quantum_walk();
 }
 
 void t_kbeyond::refresh_filters() {
@@ -260,6 +262,30 @@ void t_kbeyond::update_decay() {
     }
 }
 
+void t_kbeyond::update_quantum_walk() {
+    double rate = clampd(uwalkRate, 0.0, 8.0);
+    double incBase = (rate > 0.0 && sr > 0.0) ? (2.0 * M_PI * rate) / sr : 0.0;
+    for (int i = 0; i < N; ++i) {
+        double idx = (double)(i + 1) / (double)N;
+        double warp = lerp(0.35, 1.75, idx);
+        uwalkPhaseInc[i] = incBase * warp;
+        if (rate <= 0.0)
+            uwalkPhaseInc[i] = 0.0;
+    }
+}
+
+void t_kbeyond::reset_quantum_walk() {
+    const double g = 0.6180339887498948482; // golden ratio reciprocal for decorrelation
+    for (int i = 0; i < N; ++i) {
+        double seed = ((double)(i + 1) * g + 0.37) * 2.0 * M_PI;
+        uwalkPhase[i] = std::fmod(seed, 2.0 * M_PI);
+        if (uwalkPhase[i] < 0.0)
+            uwalkPhase[i] += 2.0 * M_PI;
+        uwalkState[i] = 0.0;
+    }
+    update_quantum_walk();
+}
+
 void t_kbeyond::apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output) {
     switch (mixMode) {
     case MixMode::Householder:
@@ -274,6 +300,37 @@ void t_kbeyond::apply_diffusion(const std::array<double, N> &input, std::array<d
     default:
         apply_householder<N>(u, input, output);
         break;
+    }
+}
+
+void t_kbeyond::apply_quantum_walk(std::array<double, N> &feedback) {
+    double coherenceAmt = clampd(coherence, 0.0, 1.0);
+    if (coherenceAmt <= 0.0)
+        return;
+
+    std::array<double, N> neighborMix {};
+    double stateMix = lerp(0.08, 0.25, coherenceAmt);
+    for (int i = 0; i < N; ++i) {
+        double phase = uwalkPhase[i];
+        double sinA = std::sin(phase);
+        double sinB = std::sin(phase * 1.7320508075688772 + (double)i * 0.4115);
+        double blend = 0.5 * (sinA + sinB);
+        int a = (i + 1) % N;
+        int b = (i + 5) % N;
+        double neighbor = lerp(feedback[a], feedback[b], 0.5 * (blend + 1.0));
+        neighborMix[i] = lerp(feedback[i], neighbor, coherenceAmt);
+
+        double drift = neighborMix[i] * (0.6 * sinA + 0.4 * sinB);
+        uwalkState[i] = lerp(uwalkState[i], drift, stateMix);
+
+        uwalkPhase[i] += uwalkPhaseInc[i];
+        if (uwalkPhase[i] > 2.0 * M_PI)
+            uwalkPhase[i] -= 2.0 * M_PI;
+    }
+
+    for (int i = 0; i < N; ++i) {
+        double modulation = uwalkState[i] * 0.2;
+        feedback[i] = lerp(feedback[i], neighborMix[i] + modulation, coherenceAmt);
     }
 }
 
@@ -366,6 +423,14 @@ t_max_err kbeyond_attr_set_phiweight(t_kbeyond* x, void* attr, long argc, t_atom
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->phiweight, 0.0, 1.0, &t_kbeyond::update_diffusion);
 }
 
+t_max_err kbeyond_attr_set_coherence(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->coherence, 0.0, 1.0, &t_kbeyond::update_quantum_walk);
+}
+
+t_max_err kbeyond_attr_set_uwalkrate(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->uwalkRate, 0.0, 8.0, &t_kbeyond::update_quantum_walk);
+}
+
 t_max_err kbeyond_attr_set_mode_mix(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     if (!x)
         return MAX_ERR_GENERIC;
@@ -427,6 +492,10 @@ void *kbeyond_new(t_symbol *, long argc, t_atom *argv) {
 
     x->mixMode = t_kbeyond::MixMode::Householder;
     x->modeMixSym = gensym("householder");
+
+    x->coherence = 0.8;
+    x->uwalkRate = 0.25;
+    x->reset_quantum_walk();
 
     if (argc > 0 && (atom_gettype(argv) == A_LONG || atom_gettype(argv) == A_FLOAT))
         kbeyond_attr_set_phiweight(x, nullptr, 1, argv);
@@ -519,6 +588,7 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         }
 
         x->apply_diffusion(vec, x->fdn_fb);
+        x->apply_quantum_walk(x->fdn_fb);
 
         double tailL = 0.0;
         double tailR = 0.0;
@@ -615,6 +685,14 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "phiweight", 0, t_kbeyond, phiweight);
     CLASS_ATTR_ACCESSORS(c, "phiweight", NULL, kbeyond_attr_set_phiweight);
     CLASS_ATTR_FILTER_CLIP(c, "phiweight", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "coherence", 0, t_kbeyond, coherence);
+    CLASS_ATTR_ACCESSORS(c, "coherence", NULL, kbeyond_attr_set_coherence);
+    CLASS_ATTR_FILTER_CLIP(c, "coherence", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "uwalkrate", 0, t_kbeyond, uwalkRate);
+    CLASS_ATTR_ACCESSORS(c, "uwalkrate", NULL, kbeyond_attr_set_uwalkrate);
+    CLASS_ATTR_FILTER_CLIP(c, "uwalkrate", 0.0, 8.0);
 
     CLASS_ATTR_SYM(c, "mode_mix", 0, t_kbeyond, modeMixSym);
     CLASS_ATTR_ACCESSORS(c, "mode_mix", kbeyond_attr_get_mode_mix, kbeyond_attr_set_mode_mix);
