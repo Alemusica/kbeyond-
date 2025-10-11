@@ -1,0 +1,24 @@
+{
+  "name": "kbeyond",
+  "version": "0.1.0",
+  "description": "Householder φ 16x16 FDN reverb external for Max/MSP.",
+  "authors": ["kbeyond contributors"],
+  "tags": ["reverb", "fdn", "spatial"],
+  "license": "MIT",
+  "homepage": "https://github.com/example/kbeyond",
+  "platforms": ["mac", "win"],
+  "max_version_min": "8.0.0",
+  "max_version_max": "9.0.0",
+  "content": {
+    "externals": [
+      "externals/kbeyond~.mxo",
+      "externals/kbeyond~.mxe64"
+    ],
+    "help": [
+      "help/kbeyond~.maxhelp"
+    ],
+    "presets": [
+      "presets/kbeyond_presets.json"
+    ]
+  }
+}

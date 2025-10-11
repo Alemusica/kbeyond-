@@ -1,0 +1,14 @@
+# Build artefacts
+build/
+*.mxo
+*.mxe64
+*.obj
+*.o
+*.pdb
+*.lib
+*.exp
+*.ilk
+*.dll
+*.dSYM/
+.DS_Store
+Thumbs.db
