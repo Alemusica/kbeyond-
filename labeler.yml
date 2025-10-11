@@ -1,0 +1,18 @@
+phase:A:
+  - any:
+      - 'docs/**'
+      - 'source/**'
+phase:B:
+  - 'source/**'
+phase:C:
+  - 'source/**'
+phase:D:
+  - 'source/**'
+phase:E:
+  - 'source/**'
+docs:
+  - 'docs/**'
+dsp:
+  - 'source/**'
+gpu:
+  - 'source/**'
