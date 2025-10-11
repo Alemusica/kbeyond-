@@ -16,7 +16,10 @@ Grazie per contribuire a **kbeyond~**. Obiettivo: qualità “flagship” con co
 - Apri un’**issue** con template *Bug*.
 - La PR di fix deve aggiornare **`docs/BUGLOG.md`** con:
   - Sintomi, root cause, soluzione, file toccati, commit SHA, verifica/metriche.
-- Spunta “**BUGLOG aggiornato**” nella checklist PR.
+  - Spunta “**BUGLOG aggiornato**” nella checklist PR.
+  - collegare l’issue (`Closes #<n>`),
+  - aggiungere una voce in `docs/BUGLOG.md` (Sintomo → Root cause → Fix → File → Commit → Verifica/metriche).
+Grazie! Ogni PR che rispetta **QA + BUGLOG** accelera review e merge.
 
 ## Fattorizzazione (factorization-first)
 - PR **meccaniche** di split: nessuna logica nuova.
@@ -46,5 +49,5 @@ Grazie per contribuire a **kbeyond~**. Obiettivo: qualità “flagship” con co
 ## CI
 - La CI macOS deve compilare; allega artefatti (`.mxo`) quando possibile.
 - Non introdurre dipendenze non documentate; aggiorna `README` se servono.
+- 
 
-Grazie! Ogni PR che rispetta **QA + BUGLOG** accelera review e merge.
