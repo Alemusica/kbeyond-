@@ -34,3 +34,23 @@ static inline void apply_householder(const std::array<double, N>& u,
     double s = -2.0 * dot;
     for (size_t i = 0; i < N; ++i) y[i] = x[i] + s * u[i];
 }
+
+template <size_t N>
+static inline void apply_walsh_hadamard(const std::array<double, N>& x,
+                                        std::array<double, N>& y) {
+    static_assert((N & (N - 1)) == 0, "Walsh-Hadamard requires power-of-two size");
+    y = x;
+    for (size_t h = 1; h < N; h <<= 1) {
+        for (size_t i = 0; i < N; i += (h << 1)) {
+            for (size_t j = i; j < i + h; ++j) {
+                double a = y[j];
+                double b = y[j + h];
+                y[j] = a + b;
+                y[j + h] = a - b;
+            }
+        }
+    }
+    double scale = 1.0 / std::sqrt((double)N);
+    for (size_t i = 0; i < N; ++i)
+        y[i] *= scale;
+}

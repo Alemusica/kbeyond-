@@ -10,7 +10,7 @@
 // Attributes (0..1 unless specified):
 //   @regen, @derez, @filter, @early, @predelay (0..0.5 seconds), @mix,
 //   @width(0..2), @size(0..1), @color(-1..+1), @modrate(Hz), @moddepth(samples),
-//   @phiweight(0..1)
+//   @phiweight(0..1), @mode_mix(householder/wht/hybrid)
 // Notes:
 //  - Delay network is a 16x16 FDN with Householder(φ) mixing (computed on the fly).
 //  - Early reflections are φ-spaced; width via M/S shuffler.
@@ -131,6 +131,7 @@ struct t_kbeyond {
     double modrate   = 0.15; // Hz
     double moddepth  = 3.0;  // samples
     double phiweight = 0.7;  // 0..1
+    t_symbol* mode_mix = nullptr;
 
     // SR / vector
     double sr = 48000.0;
@@ -164,12 +165,40 @@ struct t_kbeyond {
     // Output mapping
     std::array<double, N> outWeightsL {};
     std::array<double, N> outWeightsR {};
+    std::array<double, N> baseMid {};
+    std::array<double, N> baseSide {};
 
     // Householder vector u (normalized)
     std::array<double, N> u {};
 
     // RNG for tiny noise to avoid denormals
     uint32_t rng = 0x1234567u;
+
+    // Mixing mode
+    enum class MixMode : uint8_t {
+        Householder,
+        WHT,
+        Hybrid
+    };
+    MixMode mixMode = MixMode::Householder;
+
+    // Motion detector (range/doppler inspired)
+    OnePoleLP detectorLP700 {};
+    OnePoleLP detectorLP3k {};
+    double detectorFast = 0.0;
+    double detectorSlow = 0.0;
+    double detectorFastCoeff = 0.0;
+    double detectorSlowCoeff = 0.0;
+    double motionState = 0.0;
+    double motionSlewCoeff = 0.0;
+
+    // Slewed runtime parameters
+    double widthDynamic = 0.0;
+    double filterDynamic = 0.0;
+    double moddepthDynamic = 0.0;
+    double widthSlewCoeff = 0.0;
+    double filterSlewCoeff = 0.0;
+    double moddepthSlewCoeff = 0.0;
 
     // Methods
     void setup_sr(double newsr);
@@ -180,6 +209,9 @@ struct t_kbeyond {
     void update_householder();
     void update_output_weights();
     void update_modulators();
+    void setup_detector();
+    void apply_width_runtime(double widthValue);
+    void apply_filter_runtime(double normalizedFilter);
     inline double tiny() {
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
         return (double)(rng & 0xFFFFFF) * 1.0e-12 * (1.0/16777216.0);

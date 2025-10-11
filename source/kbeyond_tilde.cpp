@@ -27,6 +27,9 @@ double atom_to_double(long argc, t_atom* argv, double fallback) {
 void t_kbeyond::setup_sr(double newsr) {
     sr = newsr > 1.0 ? newsr : 48000.0;
     vs = std::max<long>(64, vs);
+    filterDynamic = clampd(filter, 0.0, 1.0);
+    widthDynamic = clampd(width, 0.0, 2.0);
+    moddepthDynamic = clampd(moddepth, 0.0, 32.0);
     setup_predelay();
     setup_early();
     setup_fdn();
@@ -34,6 +37,7 @@ void t_kbeyond::setup_sr(double newsr) {
     update_householder();
     update_output_weights();
     update_modulators();
+    setup_detector();
 }
 
 void t_kbeyond::setup_predelay() {
@@ -75,7 +79,8 @@ void t_kbeyond::setup_fdn() {
         double ms = baseMs * std::pow(phi, (idx - 0.5) * spread);
         ms = clampd(ms, 8.0, 400.0);
         double len = ms2samp(ms, sr);
-        size_t bufLen = (size_t)std::ceil(len + moddepth + 16.0);
+        double extra = std::max(32.0, moddepth + 16.0);
+        size_t bufLen = (size_t)std::ceil(len + extra);
         bufLen = std::max<size_t>(bufLen, 64);
         fdn[i].setup(bufLen);
         fdn_len[i] = clampd(len, 8.0, (double)bufLen - 4.0);
@@ -88,7 +93,7 @@ void t_kbeyond::setup_fdn() {
 }
 
 void t_kbeyond::refresh_filters() {
-    double hf = lerp(1200.0, sr * 0.45, clampd(filter, 0.0, 1.0));
+    double hf = lerp(1200.0, sr * 0.45, clampd(filterDynamic, 0.0, 1.0));
     double derezCut = lerp(1600.0, sr * 0.38, clampd(derez, 0.0, 1.0));
     double cutoff = std::min(hf, derezCut);
     double tiltBase = clampd(color, -1.0, 1.0) * 0.35;
@@ -113,9 +118,10 @@ void t_kbeyond::update_output_weights() {
         double r = std::cos(angle * 1.07 - 0.11);
         double mid = 0.5 * (l + r);
         double side = 0.5 * (l - r);
-        outWeightsL[i] = mid + widthNorm * side;
-        outWeightsR[i] = mid - widthNorm * side;
+        baseMid[i] = mid;
+        baseSide[i] = side;
     }
+    apply_width_runtime(widthNorm);
 }
 
 void t_kbeyond::update_modulators() {
@@ -127,6 +133,44 @@ void t_kbeyond::update_modulators() {
         fdn_phase[i] = std::fmod(fdn_phase[i], 2.0 * M_PI);
         fdn_read[i] = clampd(fdn_len[i], 8.0, (double)fdn[i].size() - 4.0);
     }
+}
+
+void t_kbeyond::setup_detector() {
+    double srSafe = std::max(1.0, sr);
+    detectorLP700.setCutoff(srSafe, 700.0);
+    detectorLP3k.setCutoff(srSafe, 3000.0);
+    detectorLP700.z = 0.0;
+    detectorLP3k.z = 0.0;
+    detectorFast = detectorSlow = 0.0;
+    auto timeToCoeff = [srSafe](double seconds) {
+        double t = std::max(1e-4, seconds);
+        return 1.0 - std::exp(-1.0 / (t * srSafe));
+    };
+    detectorFastCoeff = timeToCoeff(0.03);
+    detectorSlowCoeff = timeToCoeff(0.45);
+    motionSlewCoeff = timeToCoeff(0.12);
+    widthSlewCoeff = timeToCoeff(0.08);
+    filterSlewCoeff = timeToCoeff(0.25);
+    moddepthSlewCoeff = timeToCoeff(0.18);
+    motionState = 0.0;
+    widthDynamic = clampd(widthDynamic, 0.0, 2.0);
+    filterDynamic = clampd(filterDynamic, 0.0, 1.0);
+    moddepthDynamic = clampd(moddepthDynamic, 0.0, 32.0);
+}
+
+void t_kbeyond::apply_width_runtime(double widthValue) {
+    widthDynamic = clampd(widthValue, 0.0, 2.0);
+    for (int i = 0; i < N; ++i) {
+        double mid = baseMid[i];
+        double side = baseSide[i];
+        outWeightsL[i] = mid + widthDynamic * side;
+        outWeightsR[i] = mid - widthDynamic * side;
+    }
+}
+
+void t_kbeyond::apply_filter_runtime(double normalizedFilter) {
+    filterDynamic = clampd(normalizedFilter, 0.0, 1.0);
+    refresh_filters();
 }
 
 // ------------------------------------------------------------ Attribute helpers
@@ -151,7 +195,11 @@ t_max_err kbeyond_attr_set_derez(t_kbeyond* x, void* attr, long argc, t_atom* ar
 }
 
 t_max_err kbeyond_attr_set_filter(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
-    return kbeyond_attr_set_double(x, attr, argc, argv, &x->filter, 0.0, 1.0, &t_kbeyond::refresh_filters);
+    t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->filter, 0.0, 1.0, nullptr);
+    if (!err) {
+        x->apply_filter_runtime(x->filter);
+    }
+    return err;
 }
 
 t_max_err kbeyond_attr_set_early(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
@@ -194,11 +242,38 @@ t_max_err kbeyond_attr_set_moddepth(t_kbeyond* x, void* attr, long argc, t_atom*
     t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->moddepth, 0.0, 32.0, &t_kbeyond::setup_fdn);
     if (!err)
         x->update_modulators();
+    if (!err)
+        x->moddepthDynamic = clampd(x->moddepth, 0.0, 32.0);
     return err;
 }
 
 t_max_err kbeyond_attr_set_phiweight(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->phiweight, 0.0, 1.0, &t_kbeyond::update_householder);
+}
+
+t_max_err kbeyond_attr_set_mode_mix(t_kbeyond* x, void*, long argc, t_atom* argv) {
+    if (!x)
+        return MAX_ERR_GENERIC;
+    t_symbol* sym = nullptr;
+    if (argc > 0) {
+        if (atom_gettype(argv) == A_SYM)
+            sym = atom_getsym(argv);
+        else if (atom_gettype(argv) == A_LONG)
+            sym = atom_getlong(argv) == 0 ? gensym("householder") : gensym("wht");
+    }
+    if (!sym)
+        sym = gensym("householder");
+
+    x->mode_mix = sym;
+    if (sym == gensym("wht") || sym == gensym("WHT")) {
+        x->mixMode = t_kbeyond::MixMode::WHT;
+    } else if (sym == gensym("hybrid") || sym == gensym("Hybrid")) {
+        x->mixMode = t_kbeyond::MixMode::Hybrid;
+    } else {
+        x->mixMode = t_kbeyond::MixMode::Householder;
+        x->mode_mix = gensym("householder");
+    }
+    return MAX_ERR_NONE;
 }
 
 // ------------------------------------------------------------ Object lifecycle
@@ -211,6 +286,9 @@ void *kbeyond_new(t_symbol *, long argc, t_atom *argv) {
     dsp_setup((t_pxobject *)x, 2);
     outlet_new((t_object *)x, "signal");
     outlet_new((t_object *)x, "signal");
+
+    x->mode_mix = gensym("householder");
+    x->mixMode = t_kbeyond::MixMode::Householder;
 
     if (argc > 0 && (atom_gettype(argv) == A_LONG || atom_gettype(argv) == A_FLOAT))
         kbeyond_attr_set_phiweight(x, nullptr, 1, argv);
@@ -259,11 +337,29 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
     double *outL = (nout > 0 && outs[0]) ? outs[0] : nullptr;
     double *outR = (nout > 1 && outs[1]) ? outs[1] : nullptr;
 
-    double widthNorm = clampd(x->width, 0.0, 2.0);
     double mix = clampd(x->mix, 0.0, 1.0);
     double earlyAmt = clampd(x->early, 0.0, 1.0);
     double regen = clampd(x->regen, 0.0, 0.999);
-    double moddepth = clampd(x->moddepth, 0.0, 32.0);
+    double baseWidth = clampd(x->width, 0.0, 2.0);
+    double baseFilter = clampd(x->filter, 0.0, 1.0);
+    double baseModdepth = clampd(x->moddepth, 0.0, 32.0);
+
+    double widthDyn = clampd(x->widthDynamic, 0.0, 2.0);
+    double filterDyn = clampd(x->filterDynamic, 0.0, 1.0);
+    double moddepthDyn = clampd(x->moddepthDynamic, 0.0, 32.0);
+    double motionState = clampd(x->motionState, 0.0, 1.0);
+
+    double widthSlew = x->widthSlewCoeff;
+    double filterSlew = x->filterSlewCoeff;
+    double moddepthSlew = x->moddepthSlewCoeff;
+    double motionSlew = x->motionSlewCoeff;
+    double detectorFast = x->detectorFast;
+    double detectorSlow = x->detectorSlow;
+    double detectorFastCoeff = x->detectorFastCoeff;
+    double detectorSlowCoeff = x->detectorSlowCoeff;
+
+    OnePoleLP &lp700 = x->detectorLP700;
+    OnePoleLP &lp3k = x->detectorLP3k;
 
     for (long i = 0; i < sampleframes; ++i) {
         double inL = (nin > 0 && ins[0]) ? ins[0][i] : 0.0;
@@ -280,6 +376,35 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
 
         double midIn = 0.5 * (predOutL + predOutR);
         double sideIn = 0.5 * (predOutL - predOutR);
+
+        double low700 = lp700.process(midIn);
+        double band = lp3k.process(midIn - low700);
+        double power = band * band;
+        detectorFast += detectorFastCoeff * (power - detectorFast);
+        detectorSlow += detectorSlowCoeff * (power - detectorSlow);
+        double fastEnergy = std::max(detectorFast, 1e-12);
+        double diff = std::max(0.0, detectorFast - detectorSlow);
+        double motionRaw = clampd(diff / (fastEnergy + 1e-12), 0.0, 1.0);
+        motionRaw = std::sqrt(motionRaw);
+        motionState += motionSlew * (motionRaw - motionState);
+
+        double widthTarget = clampd(baseWidth + motionState * (2.0 - baseWidth) * 0.4, 0.0, 2.0);
+        widthDyn += widthSlew * (widthTarget - widthDyn);
+        x->apply_width_runtime(widthDyn);
+        widthDyn = x->widthDynamic;
+        double widthNorm = widthDyn;
+
+        double filterTarget = clampd(baseFilter + motionState * (1.0 - baseFilter) * 0.35, 0.0, 1.0);
+        filterDyn += filterSlew * (filterTarget - filterDyn);
+        double filterCandidate = clampd(filterDyn, 0.0, 1.0);
+        if (std::fabs(filterCandidate - x->filterDynamic) > 1e-4)
+            x->apply_filter_runtime(filterCandidate);
+        filterDyn = x->filterDynamic;
+
+        double moddepthTarget = clampd(baseModdepth + motionState * (32.0 - baseModdepth) * 0.5, 0.0, 32.0);
+        moddepthDyn += moddepthSlew * (moddepthTarget - moddepthDyn);
+        double moddepth = clampd(moddepthDyn, 0.0, 32.0);
+        x->moddepthDynamic = moddepth;
 
         x->earlyBuf.write(midIn + x->tiny());
         double earlyL = 0.0;
@@ -314,7 +439,24 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
             x->fdn_out[l] = sig;
         }
 
-        apply_householder<t_kbeyond::N>(x->u, vec, x->fdn_fb);
+        switch (x->mixMode) {
+        case t_kbeyond::MixMode::Householder:
+            apply_householder<t_kbeyond::N>(x->u, vec, x->fdn_fb);
+            break;
+        case t_kbeyond::MixMode::WHT:
+            apply_walsh_hadamard<t_kbeyond::N>(vec, x->fdn_fb);
+            break;
+        case t_kbeyond::MixMode::Hybrid: {
+            std::array<double, t_kbeyond::N> hh {};
+            std::array<double, t_kbeyond::N> wht {};
+            apply_householder<t_kbeyond::N>(x->u, vec, hh);
+            apply_walsh_hadamard<t_kbeyond::N>(vec, wht);
+            double blend = clampd(x->phiweight, 0.0, 1.0);
+            for (int l = 0; l < t_kbeyond::N; ++l)
+                x->fdn_fb[l] = lerp(wht[l], hh[l], blend);
+            break;
+        }
+        }
 
         double tailL = 0.0;
         double tailR = 0.0;
@@ -334,6 +476,13 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         if (outR)
             outR[i] = lerp(dryR, wetR, mix);
     }
+
+    x->widthDynamic = widthDyn;
+    x->filterDynamic = filterDyn;
+    x->moddepthDynamic = clampd(moddepthDyn, 0.0, 32.0);
+    x->motionState = clampd(motionState, 0.0, 1.0);
+    x->detectorFast = detectorFast;
+    x->detectorSlow = detectorSlow;
 }
 
 extern "C" C74_EXPORT void ext_main(void *r) {
@@ -389,6 +538,10 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "phiweight", 0, t_kbeyond, phiweight);
     CLASS_ATTR_ACCESSORS(c, "phiweight", NULL, kbeyond_attr_set_phiweight);
     CLASS_ATTR_FILTER_CLIP(c, "phiweight", 0.0, 1.0);
+
+    CLASS_ATTR_SYM(c, "mode_mix", 0, t_kbeyond, mode_mix);
+    CLASS_ATTR_ACCESSORS(c, "mode_mix", NULL, kbeyond_attr_set_mode_mix);
+    CLASS_ATTR_ENUM(c, "mode_mix", 0, "householder wht hybrid");
 
     class_dspinit(c);
     class_register(CLASS_BOX, c);
