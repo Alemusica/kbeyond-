@@ -37,11 +37,14 @@ void t_kbeyond::setup_sr(double newsr) {
 }
 
 void t_kbeyond::setup_predelay() {
-    double maxMs = 250.0;
-    maxPred = (long)std::max<double>(ms2samp(maxMs, sr) + 16.0, 256.0);
-    predL.setup((size_t)maxPred + 8);
-    predR.setup((size_t)maxPred + 8);
-    predSamps = clampd(predelay * sr, 0.0, (double)predL.size() - 2.0);
+    double maxSamples = kPredelayMaxSeconds * sr;
+    double desired = std::ceil(maxSamples + kPredelaySafetySamples);
+    maxPred = (long)std::max<double>(desired, 256.0);
+    size_t bufferLen = (size_t)maxPred + 8;
+    predL.setup(bufferLen);
+    predR.setup(bufferLen);
+    double maxDelay = std::max(0.0, (double)bufferLen - 4.0);
+    predSamps = clampd(predelay * sr, 0.0, maxDelay);
 }
 
 void t_kbeyond::setup_early() {
@@ -156,9 +159,9 @@ t_max_err kbeyond_attr_set_early(t_kbeyond* x, void* attr, long argc, t_atom* ar
 }
 
 t_max_err kbeyond_attr_set_predelay(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
-    t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->predelay, 0.0, 0.5, &t_kbeyond::setup_predelay);
+    t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->predelay, 0.0, t_kbeyond::kPredelayMaxSeconds, &t_kbeyond::setup_predelay);
     if (!err)
-        x->predSamps = clampd(x->predelay * x->sr, 0.0, (double)x->predL.size() - 2.0);
+        x->predSamps = clampd(x->predelay * x->sr, 0.0, std::max(0.0, (double)x->predL.size() - 4.0));
     return err;
 }
 
@@ -357,7 +360,7 @@ extern "C" C74_EXPORT void ext_main(void *r) {
 
     CLASS_ATTR_DOUBLE(c, "predelay", 0, t_kbeyond, predelay);
     CLASS_ATTR_ACCESSORS(c, "predelay", NULL, kbeyond_attr_set_predelay);
-    CLASS_ATTR_FILTER_CLIP(c, "predelay", 0.0, 0.5);
+    CLASS_ATTR_FILTER_CLIP(c, "predelay", 0.0, t_kbeyond::kPredelayMaxSeconds);
 
     CLASS_ATTR_DOUBLE(c, "mix", 0, t_kbeyond, mix);
     CLASS_ATTR_ACCESSORS(c, "mix", NULL, kbeyond_attr_set_mix);

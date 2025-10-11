@@ -60,7 +60,7 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 - `presets/kbeyond_presets.json` offre tre preset (Hall Larga, Plate Densa, Room Intima) per un richiamo rapido.
 
 ## Note di implementazione DSP
-- Il predelay (`@predelay`) è espresso in secondi e ricampionato al cambio di sample-rate.
+- Il predelay (`@predelay`) è espresso in secondi (0–0.5 s) e ricampionato al cambio di sample-rate.
 - La larghezza stereo (`@width`) agisce sia sulle riflessioni precoci (M/S) sia sul mix di uscita FDN.
 - Le linee FDN utilizzano `householder_phi16.h` per generare il vettore normalizzato e applicare la trasformata senza creare la matrice completa.
 - Non sono presenti riferimenti a vecchi componenti Audio Unit; il target espone esclusivamente `ext_main`, `dsp64`, `perform64` per Max.
