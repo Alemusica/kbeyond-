@@ -1,11 +1,19 @@
 cmake_minimum_required(VERSION 3.18)
 project(kbeyond_tilde LANGUAGES CXX)
 
-if(NOT DEFINED ENV{MAX_SDK_ROOT})
-    message(FATAL_ERROR "MAX_SDK_ROOT environment variable must point to the root of the Max SDK")
+set(MAXSDK_ROOT "")
+
+if(DEFINED MAX_SDK_ROOT)
+    set(MAXSDK_ROOT "${MAX_SDK_ROOT}")
+elseif(DEFINED ENV{MAX_SDK_ROOT})
+    set(MAXSDK_ROOT "$ENV{MAX_SDK_ROOT}")
 endif()
 
-set(MAXSDK_ROOT $ENV{MAX_SDK_ROOT})
+if(MAXSDK_ROOT STREQUAL "")
+    message(FATAL_ERROR "MAX_SDK_ROOT must point to the root of the Max SDK. Set it either as an environment variable or pass -DMAX_SDK_ROOT=/path/to/max-sdk to CMake.")
+endif()
+
+file(TO_CMAKE_PATH "${MAXSDK_ROOT}" MAXSDK_ROOT)
 
 set(MAXSDK_MAX_INCLUDES "${MAXSDK_ROOT}/source/c74support/max-includes")
 set(MAXSDK_MSP_INCLUDES "${MAXSDK_ROOT}/source/c74support/msp-includes")
