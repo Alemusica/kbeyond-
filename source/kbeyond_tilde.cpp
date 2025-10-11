@@ -829,8 +829,10 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
     double dampMFNorm = clampd(dampMFNormBase + motionAmt * 0.55 * dampBoost, 0.0, 1.0);
     double dampHFNorm = clampd(dampHFNormBase + motionAmt * (0.45 * dampBoost + 0.55 * dopplerEnv), 0.0, 1.0);
     double dampLFValue = x->decayState.dampLF;
-    double dampMFValue = lerp(1.0, 0.45, dampMFNorm);
-    double dampHFValue = lerp(1.0, 0.12, dampHFNorm);
+    double dampMFBase = x->decayState.dampMF;
+    double dampHFBase = x->decayState.dampHF;
+    double dampMFValue = std::max(lerp(1.0, 0.45, dampMFNorm), dampMFBase);
+    double dampHFValue = std::max(lerp(1.0, 0.12, dampHFNorm), dampHFBase);
 
 #ifdef KBEYOND_UNIT_TEST
     x->debugWidthTarget = widthNorm;
