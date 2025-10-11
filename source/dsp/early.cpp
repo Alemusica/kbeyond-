@@ -235,17 +235,18 @@ void EarlySection::render(double inL,
                           double inR,
                           double widthNorm,
                           double earlyAmt,
-                          double focusNorm,
+                          double focusAmt,
                           double clusterAmt,
                           double &earlyL,
                           double &earlyR,
                           uint32_t &rng) {
     widthNorm = clampd(widthNorm, 0.0, 2.0);
-    focusNorm = clampd(focusNorm, 0.0, 1.0);
+    const double spreadNorm = clampd(earlyAmt, 0.0, 1.0);
+    const double focusNorm = clampd(focusAmt, 0.0, 1.0);
     const double wMainBase = 0.5 * (1.0 + widthNorm);
     const double wCrossBase = 0.5 * (1.0 - widthNorm);
-    const double wMain = lerp(1.0, wMainBase, focusNorm);
-    const double wCross = lerp(0.0, wCrossBase, focusNorm);
+    const double wMain = lerp(1.0, wMainBase, spreadNorm);
+    const double wCross = lerp(0.0, wCrossBase, spreadNorm);
     const double midIn = 0.5 * (inL + inR);
     const double sideIn = 0.5 * (inL - inR);
     const double detector = std::max(std::fabs(midIn), std::fabs(sideIn));
@@ -260,7 +261,7 @@ void EarlySection::render(double inL,
     earlyBufSide_.write(sideIn + tiny_noise(rng));
 
     const double sideBlendBase = clampd(0.5 * widthNorm, 0.0, 1.0);
-    const double sideBlend = lerp(0.0, sideBlendBase, focusNorm);
+    const double sideBlend = lerp(0.0, sideBlendBase, spreadNorm);
 
     double left = 0.0;
     double right = 0.0;
@@ -320,15 +321,15 @@ void EarlySection::render(double inL,
             laserPhase_ -= 2.0 * M_PI;
     }
 
-    if (focusNorm < 1.0) {
+    if (spreadNorm < 1.0) {
         const double center = 0.5 * (left + right);
-        const double blend = focusNorm * focusNorm;
+        const double blend = spreadNorm * spreadNorm;
         left = lerp(center, left, blend);
         right = lerp(center, right, blend);
     }
 
-    earlyL = left * earlyAmt;
-    earlyR = right * earlyAmt;
+    earlyL = left * focusNorm;
+    earlyR = right * focusNorm;
 }
 
 double EarlySection::computeQSwitchMix(double clusterAmt, double diffusion) {

@@ -82,44 +82,82 @@ bool test_early_reflections() {
 
     double baselineRatio = leftPeak / (rightPeak + eps);
 
-    t_kbeyond focusWide{};
-    focusWide.setup_sr(48000.0);
-    focusWide.width = 1.6;
-    focusWide.early = 1.0;
-    focusWide.focus = 1.0;
-    focusWide.predelay = 0.0;
-    focusWide.setup_predelay();
+    t_kbeyond spreadWide{};
+    spreadWide.setup_sr(48000.0);
+    spreadWide.width = 1.6;
+    spreadWide.early = 1.0;
+    spreadWide.focus = 1.0;
+    spreadWide.predelay = 0.0;
+    spreadWide.setup_predelay();
 
     std::vector<double> wideLeft(frames, 0.0);
     std::vector<double> wideRight(frames, 0.0);
-    renderImpulse(focusWide, 1.0, 0.0, wideLeft, wideRight);
+    renderImpulse(spreadWide, 1.0, 0.0, wideLeft, wideRight);
     auto widePeaks = findPeaks(wideLeft, wideRight);
     double wideRatio = widePeaks.first / (widePeaks.second + eps);
 
-    t_kbeyond focusTight{};
-    focusTight.setup_sr(48000.0);
-    focusTight.width = focusWide.width;
-    focusTight.early = focusWide.early;
-    focusTight.focus = 0.25;
-    focusTight.predelay = 0.0;
-    focusTight.setup_predelay();
+    t_kbeyond spreadTight{};
+    spreadTight.setup_sr(48000.0);
+    spreadTight.width = spreadWide.width;
+    spreadTight.early = 0.2;
+    spreadTight.focus = spreadWide.focus;
+    spreadTight.predelay = 0.0;
+    spreadTight.setup_predelay();
 
     std::vector<double> tightLeft(frames, 0.0);
     std::vector<double> tightRight(frames, 0.0);
-    renderImpulse(focusTight, 1.0, 0.0, tightLeft, tightRight);
+    renderImpulse(spreadTight, 1.0, 0.0, tightLeft, tightRight);
     auto tightPeaks = findPeaks(tightLeft, tightRight);
     double tightRatio = tightPeaks.first / (tightPeaks.second + eps);
 
     if (!(wideRatio > baselineRatio)) {
-        std::cerr << "Wide focus ratio did not exceed baseline ratio" << std::endl;
+        std::cerr << "Wide spread ratio did not exceed baseline ratio" << std::endl;
         return false;
     }
     if (!(tightRatio < wideRatio)) {
-        std::cerr << "Tight focus ratio not reduced" << std::endl;
+        std::cerr << "Tight spread ratio not reduced" << std::endl;
         return false;
     }
     if (tightRatio > 1.05) {
-        std::cerr << "Tight focus remained too wide: ratio=" << tightRatio << std::endl;
+        std::cerr << "Tight spread remained too wide: ratio=" << tightRatio << std::endl;
+        return false;
+    }
+
+    auto energySum = [&](const std::vector<double> &lVec, const std::vector<double> &rVec) {
+        double acc = 0.0;
+        for (int n = 0; n < frames; ++n)
+            acc += lVec[n] * lVec[n] + rVec[n] * rVec[n];
+        return acc;
+    };
+
+    t_kbeyond focusFull{};
+    focusFull.setup_sr(48000.0);
+    focusFull.width = spreadWide.width;
+    focusFull.early = spreadWide.early;
+    focusFull.focus = 1.0;
+    focusFull.predelay = 0.0;
+    focusFull.setup_predelay();
+
+    t_kbeyond focusNarrow{};
+    focusNarrow.setup_sr(48000.0);
+    focusNarrow.width = focusFull.width;
+    focusNarrow.early = focusFull.early;
+    focusNarrow.focus = 0.25;
+    focusNarrow.predelay = 0.0;
+    focusNarrow.setup_predelay();
+
+    std::vector<double> focusFullLeft(frames, 0.0);
+    std::vector<double> focusFullRight(frames, 0.0);
+    std::vector<double> focusSoftLeft(frames, 0.0);
+    std::vector<double> focusSoftRight(frames, 0.0);
+    renderImpulse(focusFull, 1.0, 0.0, focusFullLeft, focusFullRight);
+    renderImpulse(focusNarrow, 1.0, 0.0, focusSoftLeft, focusSoftRight);
+
+    double fullEnergy = energySum(focusFullLeft, focusFullRight);
+    double reducedEnergy = energySum(focusSoftLeft, focusSoftRight);
+
+    if (!(reducedEnergy < fullEnergy * 0.35)) {
+        std::cerr << "Focus control did not sufficiently reduce early energy" << std::endl;
         return false;
     }
 

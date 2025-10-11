@@ -70,8 +70,8 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 - `@laserdiffusion`: intensità dell'alternativa di diffusione durante il Q-switch (0–1). 
 
 ### Riflessi precoci
-- `@early`: livello complessivo delle riflessioni precoci (0–1).
-- `@focus`: concentra le riflessioni precoci verso il centro riducendo gradualmente la componente side e l'attivazione del cluster quando diminuisce (0–1, default 1.0).
+- `@early`: ampiezza della diffusione stereo delle riflessioni precoci (0–1, da centro stretto a massima apertura).
+- `@focus`: livello complessivo e inviluppo delle riflessioni precoci; valori bassi attenuano l'early e inibiscono il cluster laser (0–1, default 1.0).
 
 ### Modalità di diffusione (`@mode_mix`)
 - `householder`: matrice Householder pesata con φ, densa e leggermente colorata.

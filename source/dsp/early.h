@@ -30,7 +30,7 @@ struct EarlySection {
                 double inR,
                 double widthNorm,
                 double earlyAmt,
-                double focusNorm,
+                double focusAmt,
                 double clusterAmt,
                 double &earlyL,
                 double &earlyR,
