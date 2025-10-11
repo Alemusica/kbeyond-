@@ -41,7 +41,7 @@
 - Docs e preset aggiornati; test QA verdi (vedi `docs/QA.md`).
 
 ## 4) Percorsi & Documenti
-- Roadmap: `docs/ROADMAP.md`
+- Roadmap: `docs/roadmap_it.md`
 - QA & metriche: `docs/QA.md`
 - PHONON: `docs/PHONON.md`
 - Prime modes: `docs/PRIME_MODES.md`
