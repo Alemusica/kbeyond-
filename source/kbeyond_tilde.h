@@ -138,6 +138,7 @@ struct t_kbeyond {
     double derez     = 1.0;
     double filter    = 0.6;
     double early     = 0.3;
+    double focus     = 1.0;
     double predelay  = 0.05; // seconds
     double mix       = 0.5;
 
@@ -273,7 +274,7 @@ struct t_kbeyond {
     void apply_quantum_dither(std::array<double, N> &vector);
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
     void apply_quantum_walk(std::array<double, N> &feedback);
-    void render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);
+    void render_early(double inL, double inR, double widthNorm, double earlyAmt, double focusAmt, double &earlyL, double &earlyR);
     void update_injection_weights();
     std::vector<double> make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const;
     inline double tiny() {
