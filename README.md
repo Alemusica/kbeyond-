@@ -33,6 +33,8 @@ cmake -S . -B build/Release -DCMAKE_BUILD_TYPE=Release
 cmake --build build/Release --config Release
 ```
 Se `cmake` termina immediatamente con un errore che menziona `ext.h` o `z_dsp.h`, significa che il percorso fornito in `MAX_SDK_ROOT` (o passato tramite `-DMAX_SDK_ROOT`) non contiene un Max SDK valido (ad esempio la cartella `source/c74support` manca oppure è una versione incompleta). Assicurarsi di avere scaricato e scompattato il Max SDK ufficiale e riprovare. Lo script `scripts/verify_max_sdk.sh` permette di controllare rapidamente che i file richiesti (`ext.h`, `z_dsp.h`) siano presenti prima di configurare la build.
+
+Sono supportati sia l'archivio `.zip` distribuito da Cycling '74 (layout `max-sdk-base/c74support`) sia il checkout GitHub del repository del Max SDK (layout `source/c74support`). Il rilevamento automatico userà il percorso corretto per gli include e le framework path.
 Gli artefatti prodotti (`kbeyond~.mxo` su macOS, `kbeyond~.mxe64` su Windows) verranno creati in `build/Release`. Copiare il file risultante nella cartella `externals/` del package Max.
 
 ## Script automatizzati

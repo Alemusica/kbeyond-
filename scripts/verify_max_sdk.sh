@@ -28,8 +28,35 @@ SDK_PATH="$(cd "${SDK_PATH}" 2>/dev/null && pwd)" || {
     exit 1
 }
 
-MAX_INCLUDES="${SDK_PATH}/source/c74support/max-includes"
-MSP_INCLUDES="${SDK_PATH}/source/c74support/msp-includes"
+C74_CANDIDATES=(
+    "${SDK_PATH}/max-sdk-base/c74support"
+    "${SDK_PATH}/source/max-sdk-base/c74support"
+    "${SDK_PATH}/source/c74support"
+    "${SDK_PATH}/c74support"
+)
+
+C74SUPPORT=""
+for candidate in "${C74_CANDIDATES[@]}"; do
+    if [[ -d "${candidate}" ]]; then
+        C74SUPPORT="${candidate}"
+        break
+    fi
+done
+
+if [[ -z "${C74SUPPORT}" ]]; then
+    cat >&2 <<'HINT'
+ERROR: Unable to locate the c74support folder inside the supplied Max SDK path.
+Expected to find one of:
+  max-sdk-base/c74support
+  source/max-sdk-base/c74support
+  source/c74support
+  c74support
+HINT
+    exit 1
+fi
+
+MAX_INCLUDES="${C74SUPPORT}/max-includes"
+MSP_INCLUDES="${C74SUPPORT}/msp-includes"
 
 missing=0
 if [[ ! -f "${MAX_INCLUDES}/ext.h" ]]; then
@@ -46,7 +73,8 @@ if [[ ${missing} -ne 0 ]]; then
     cat >&2 <<'HINT'
 The path exists but appears incomplete. Make sure you downloaded and unzipped the
 full Max SDK (available from https://cycling74.com/downloads/sdk ). The correct
-layout includes source/c74support/max-includes and msp-includes.
+layout includes either max-sdk-base/c74support or source/c74support with
+max-includes and msp-includes populated.
 HINT
     exit 1
 fi

@@ -2,15 +2,35 @@
 # Requires MAX_SDK_ROOT to point to the Max SDK root.
 
 SDK ?= $(MAX_SDK_ROOT)
+C74SUPPORT := $(shell if [ -n "$(SDK)" ]; then \
+    for dir in "$(SDK)/max-sdk-base/c74support" "$(SDK)/source/max-sdk-base/c74support" "$(SDK)/source/c74support" "$(SDK)/c74support"; do \
+        if [ -d "$$dir" ]; then echo "$$dir"; break; fi; \
+    done; \
+  fi)
+
+ifeq ($(strip $(C74SUPPORT)),)
+$(error Could not locate c74support inside $(SDK). Expected max-sdk-base/c74support or source/c74support.)
+endif
+
+MAX_INCLUDES := $(C74SUPPORT)/max-includes
+MSP_INCLUDES := $(C74SUPPORT)/msp-includes
+
+ifeq ($(wildcard $(MAX_INCLUDES)/ext.h),)
+$(error Missing ext.h under $(MAX_INCLUDES). Check that the Max SDK is fully extracted.)
+endif
+
+ifeq ($(wildcard $(MSP_INCLUDES)/z_dsp.h),)
+$(error Missing z_dsp.h under $(MSP_INCLUDES). Check that the Max SDK is fully extracted.)
+endif
 SRC := source/kbeyond_tilde.cpp
 OUT := build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~
 CXX := clang++
 CXXFLAGS := -std=c++17 -arch x86_64 -fPIC -stdlib=libc++ -mmacosx-version-min=10.13 \
-    -I$(SDK)/source/c74support/max-includes \
-    -I$(SDK)/source/c74support/msp-includes \
+    -I$(MAX_INCLUDES) \
+    -I$(MSP_INCLUDES) \
     -Isource
 LDFLAGS := -bundle -undefined dynamic_lookup -arch x86_64 \
-    -F$(SDK)/source/c74support/max-includes \
+    -F$(MAX_INCLUDES) \
     -framework Carbon -framework Cocoa -framework MaxAPI -framework MaxAudioAPI
 
 all: $(OUT)

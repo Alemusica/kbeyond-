@@ -11,7 +11,11 @@ if (NOT DEFINED MAX_SDK_ROOT)
 endif()
 
 # --- Supporta entrambi i layout (max-sdk e max-sdk-base) ---
-if (EXISTS "${MAX_SDK_ROOT}/source/c74support/max-includes/ext.h")
+if (EXISTS "${MAX_SDK_ROOT}/max-sdk-base/c74support/max-includes/ext.h")
+  set(C74SUPPORT "${MAX_SDK_ROOT}/max-sdk-base/c74support")
+elseif (EXISTS "${MAX_SDK_ROOT}/source/max-sdk-base/c74support/max-includes/ext.h")
+  set(C74SUPPORT "${MAX_SDK_ROOT}/source/max-sdk-base/c74support")
+elseif (EXISTS "${MAX_SDK_ROOT}/source/c74support/max-includes/ext.h")
   set(C74SUPPORT "${MAX_SDK_ROOT}/source/c74support")
 elseif (EXISTS "${MAX_SDK_ROOT}/c74support/max-includes/ext.h")
   set(C74SUPPORT "${MAX_SDK_ROOT}/c74support")
