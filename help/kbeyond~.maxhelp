@@ -32,9 +32,9 @@
         "box": {
           "id": "comment-attrs",
           "maxclass": "comment",
-          "patching_rect": [260.0, 80.0, 240.0, 48.0],
-          "linecount": 3,
-          "text": "attrui objects expose @mix / @width / @decay\nDrag to audition blend, space and tail\nUse damphf to trim brightness"
+          "patching_rect": [260.0, 80.0, 260.0, 64.0],
+          "linecount": 4,
+          "text": "attrui objects expose @mix / @width / @decay / @mode_mix\nDrag to audition blend, space and tail\nUse damphf to trim brightness\nSwitch @mode_mix to explore WHT or hybrid diffusion"
         }
       },
       {
@@ -94,6 +94,14 @@
       },
       {
         "box": {
+          "id": "attr-mode-mix",
+          "maxclass": "attrui",
+          "patching_rect": [260.0, 280.0, 140.0, 22.0],
+          "attr": "mode_mix"
+        }
+      },
+      {
+        "box": {
           "id": "comment-signal",
           "maxclass": "comment",
           "patching_rect": [20.0, 230.0, 220.0, 20.0],
@@ -147,6 +155,12 @@
       {
         "patchline": {
           "source": ["attr-damphf", 0],
+          "destination": ["kbeyond", 0]
+        }
+      },
+      {
+        "patchline": {
+          "source": ["attr-mode-mix", 0],
           "destination": ["kbeyond", 0]
         }
       }

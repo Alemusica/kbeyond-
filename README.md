@@ -3,10 +3,10 @@
 `kbeyond~` è un riverbero FDN 16×16 che utilizza una trasformata di Householder pesata con φ per creare una coda spaziosa e modulata. Il progetto include tutto il necessario per compilare l'external con il Max SDK su macOS e Windows, insieme a help patcher, preset e metadati di package.
 
 ## Caratteristiche principali
-- 16 linee di ritardo con matrice Householder(φ) calcolata in tempo reale.
+- 16 linee di ritardo con diffusore selezionabile: Householder(φ), Walsh-Hadamard o ibrido.
 - Predelay sensibile al sample-rate, riflessioni precoci φ-spaced con controllo stereo M/S.
 - Modulatori indipendenti per ciascuna linea FDN con parametri `@modrate` e `@moddepth`.
-- Controlli completi: `@regen @derez @filter @early @predelay @mix @width @size @color @modrate @moddepth @phiweight`.
+- Controlli completi: `@regen @derez @filter @early @predelay @mix @width @size @color @modrate @moddepth @phiweight @mode_mix`.
 - Implementazione C++17, 64-bit only, compatibile con Max 8/9.
 
 ## Struttura del repository
@@ -56,14 +56,19 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 - Aggiornare `package-info.json` se si modifica la versione o le compatibilità.
 
 ## Documentazione
-- `help/kbeyond~.maxhelp` mostra una catena minima `noise~ -> kbeyond~ -> ezdac~` con controllo degli attributi `@mix` e `@width`.
+- `help/kbeyond~.maxhelp` mostra una catena minima `noise~ -> kbeyond~ -> ezdac~` con controllo degli attributi `@mix`, `@width` e `@mode_mix`.
 - `presets/kbeyond_presets.json` offre tre preset (Hall Larga, Plate Densa, Room Intima) per un richiamo rapido.
 - `docs/roadmap_it.md` descrive le fasi di evoluzione previste, con criteri di accettazione per ciascuna milestone.
+
+### Modalità di diffusione (`@mode_mix`)
+- `householder`: matrice Householder pesata con φ, densa e leggermente colorata.
+- `wht`: trasformata Walsh-Hadamard 16×16 normalizzata, per una distribuzione più granulare e simmetrica.
+- `hybrid`: media ortonormale tra Householder e WHT, utile per code molto dense con risposta transitoria bilanciata.
 
 ## Note di implementazione DSP
 - Il predelay (`@predelay`) è espresso in secondi (0–0.5 s) e ricampionato al cambio di sample-rate.
 - La larghezza stereo (`@width`) agisce sia sulle riflessioni precoci (M/S) sia sul mix di uscita FDN.
-- Le linee FDN utilizzano `householder_phi16.h` per generare il vettore normalizzato e applicare la trasformata senza creare la matrice completa.
+- Le linee FDN utilizzano `householder_phi16.h` per generare il vettore Householder e helper dedicati per Walsh-Hadamard/ibrido, mantenendo trasformazioni ortonormali senza costruire matrici complete.
 - Non sono presenti riferimenti a vecchi componenti Audio Unit; il target espone esclusivamente `ext_main`, `dsp64`, `perform64` per Max.
 
 ## Licenza

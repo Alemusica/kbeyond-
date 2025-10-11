@@ -5,10 +5,38 @@
 #include <numeric>
 #include <cstdio>
 #include <cstddef>
+#include <cmath>
 
 static constexpr std::size_t kAssistStringMax = 256;
 
 static t_class* s_kbeyond_class = nullptr;
+
+static void apply_walsh_hadamard16(const std::array<double, t_kbeyond::N> &input,
+                                   std::array<double, t_kbeyond::N> &output) {
+    std::array<double, t_kbeyond::N> tmp = input;
+    for (std::size_t len = 1; len < tmp.size(); len <<= 1) {
+        std::size_t step = len << 1;
+        for (std::size_t i = 0; i < tmp.size(); i += step) {
+            for (std::size_t j = 0; j < len; ++j) {
+                double a = tmp[i + j];
+                double b = tmp[i + j + len];
+                tmp[i + j] = a + b;
+                tmp[i + j + len] = a - b;
+            }
+        }
+    }
+    double norm = 1.0 / std::sqrt(static_cast<double>(tmp.size()));
+    for (std::size_t i = 0; i < tmp.size(); ++i)
+        output[i] = tmp[i] * norm;
+}
+
+static void apply_hybrid_diffusion(const std::array<double, t_kbeyond::N> &u,
+                                   const std::array<double, t_kbeyond::N> &input,
+                                   std::array<double, t_kbeyond::N> &output,
+                                   std::array<double, t_kbeyond::N> &scratch) {
+    apply_walsh_hadamard16(input, scratch);
+    apply_householder<t_kbeyond::N>(u, scratch, output);
+}
 
 #ifndef KBEYOND_UNIT_TEST
 namespace {
@@ -33,7 +61,7 @@ void t_kbeyond::setup_sr(double newsr) {
     setup_early();
     setup_fdn();
     refresh_filters();
-    update_householder();
+    update_diffusion();
     update_output_weights();
     update_modulators();
 }
@@ -141,20 +169,34 @@ void t_kbeyond::refresh_filters() {
     }
 }
 
-void t_kbeyond::update_householder() {
+void t_kbeyond::update_diffusion() {
     make_phi_vector<N>(u, clampd(phiweight, 0.0, 1.0));
 }
 
 void t_kbeyond::update_output_weights() {
     double widthNorm = clampd(width, 0.0, 2.0);
+    double normL = 0.0;
+    double normR = 0.0;
     for (int i = 0; i < N; ++i) {
         double angle = (2.0 * M_PI * (double)i) / (double)N;
         double l = std::sin(angle * 0.91 + 0.17);
         double r = std::cos(angle * 1.07 - 0.11);
         double mid = 0.5 * (l + r);
         double side = 0.5 * (l - r);
-        outWeightsL[i] = mid + widthNorm * side;
-        outWeightsR[i] = mid - widthNorm * side;
+        outBaseMid[i] = mid;
+        outBaseSide[i] = side;
+        double wL = mid + widthNorm * side;
+        double wR = mid - widthNorm * side;
+        outWeightsL[i] = wL;
+        outWeightsR[i] = wR;
+        normL += wL * wL;
+        normR += wR * wR;
+    }
+    double scaleL = normL > 0.0 ? 1.0 / std::sqrt(normL) : 1.0;
+    double scaleR = normR > 0.0 ? 1.0 / std::sqrt(normR) : 1.0;
+    for (int i = 0; i < N; ++i) {
+        outWeightsL[i] *= scaleL;
+        outWeightsR[i] *= scaleR;
     }
 }
 
@@ -203,6 +245,23 @@ void t_kbeyond::update_decay() {
         fdn_high[i].setCutoff(sr, hfCut);
         fdn_low[i].reset();
         fdn_high[i].reset();
+    }
+}
+
+void t_kbeyond::apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output) {
+    switch (mixMode) {
+    case MixMode::Householder:
+        apply_householder<N>(u, input, output);
+        break;
+    case MixMode::WHT:
+        apply_walsh_hadamard16(input, output);
+        break;
+    case MixMode::Hybrid:
+        apply_hybrid_diffusion(u, input, output, diffusionScratch);
+        break;
+    default:
+        apply_householder<N>(u, input, output);
+        break;
     }
 }
 
@@ -292,7 +351,55 @@ t_max_err kbeyond_attr_set_moddepth(t_kbeyond* x, void* attr, long argc, t_atom*
 }
 
 t_max_err kbeyond_attr_set_phiweight(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
-    return kbeyond_attr_set_double(x, attr, argc, argv, &x->phiweight, 0.0, 1.0, &t_kbeyond::update_householder);
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->phiweight, 0.0, 1.0, &t_kbeyond::update_diffusion);
+}
+
+t_max_err kbeyond_attr_set_mode_mix(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    if (!x)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    t_symbol* sym = nullptr;
+    if (argc > 0 && argv)
+        sym = atom_getsym(argv);
+    if (!sym)
+        sym = gensym("householder");
+
+    t_symbol* symHouse = gensym("householder");
+    t_symbol* symWht = gensym("wht");
+    t_symbol* symHybrid = gensym("hybrid");
+
+    t_kbeyond::MixMode newMode = t_kbeyond::MixMode::Householder;
+    if (sym == symHouse) {
+        newMode = t_kbeyond::MixMode::Householder;
+    } else if (sym == symWht) {
+        newMode = t_kbeyond::MixMode::WHT;
+    } else if (sym == symHybrid) {
+        newMode = t_kbeyond::MixMode::Hybrid;
+    } else {
+        sym = symHouse;
+    }
+
+    x->mixMode = newMode;
+    x->modeMixSym = sym;
+    x->update_diffusion();
+    x->update_output_weights();
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_get_mode_mix(t_kbeyond* x, void* attr, long* argc, t_atom** argv) {
+    if (!x || !argc || !argv)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    if (!*argv)
+        *argv = (t_atom*)sysmem_newptr(sizeof(t_atom));
+    if (!*argv) {
+        *argc = 0;
+        return MAX_ERR_GENERIC;
+    }
+    *argc = 1;
+    t_symbol* sym = x->modeMixSym ? x->modeMixSym : gensym("householder");
+    atom_setsym(*argv, sym);
+    return MAX_ERR_NONE;
 }
 
 // ------------------------------------------------------------ Object lifecycle
@@ -305,6 +412,9 @@ void *kbeyond_new(t_symbol *, long argc, t_atom *argv) {
     dsp_setup((t_pxobject *)x, 2);
     outlet_new((t_object *)x, "signal");
     outlet_new((t_object *)x, "signal");
+
+    x->mixMode = t_kbeyond::MixMode::Householder;
+    x->modeMixSym = gensym("householder");
 
     if (argc > 0 && (atom_gettype(argv) == A_LONG || atom_gettype(argv) == A_FLOAT))
         kbeyond_attr_set_phiweight(x, nullptr, 1, argv);
@@ -396,7 +506,7 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
             x->fdn_out[l] = sig;
         }
 
-        apply_householder<t_kbeyond::N>(x->u, vec, x->fdn_fb);
+        x->apply_diffusion(vec, x->fdn_fb);
 
         double tailL = 0.0;
         double tailR = 0.0;
@@ -493,6 +603,11 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "phiweight", 0, t_kbeyond, phiweight);
     CLASS_ATTR_ACCESSORS(c, "phiweight", NULL, kbeyond_attr_set_phiweight);
     CLASS_ATTR_FILTER_CLIP(c, "phiweight", 0.0, 1.0);
+
+    CLASS_ATTR_SYM(c, "mode_mix", 0, t_kbeyond, modeMixSym);
+    CLASS_ATTR_ACCESSORS(c, "mode_mix", kbeyond_attr_get_mode_mix, kbeyond_attr_set_mode_mix);
+    CLASS_ATTR_ENUM(c, "mode_mix", 0, "householder wht hybrid");
+    CLASS_ATTR_LABEL(c, "mode_mix", 0, "Diffusion Mode");
 
     class_dspinit(c);
     class_register(CLASS_BOX, c);

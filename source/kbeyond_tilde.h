@@ -163,6 +163,8 @@ struct t_kbeyond {
     std::array<double, kEarlyTaps> earlyCos {};
     std::array<double, kEarlyTaps> earlySin {};
 
+    enum class MixMode { Householder = 0, WHT, Hybrid };
+
     // FDN
     static const int N = 16;
     std::array<DelayLine, N> fdn;
@@ -179,11 +181,17 @@ struct t_kbeyond {
     std::array<double, N>    inWeights {};
 
     // Output mapping
+    std::array<double, N> outBaseMid {};
+    std::array<double, N> outBaseSide {};
     std::array<double, N> outWeightsL {};
     std::array<double, N> outWeightsR {};
 
     // Householder vector u (normalized)
     std::array<double, N> u {};
+    std::array<double, N> diffusionScratch {};
+
+    MixMode   mixMode = MixMode::Householder;
+    t_symbol *modeMixSym = nullptr;
 
     // Decay / damping
     double decay    = 0.0;  // seconds, 0 disables RT60 mapping
@@ -204,10 +212,11 @@ struct t_kbeyond {
     void setup_early();
     void setup_fdn();
     void refresh_filters();
-    void update_householder();
+    void update_diffusion();
     void update_output_weights();
     void update_modulators();
     void update_decay();
+    void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
     void render_early(double midIn, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);
     inline double tiny() {
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
