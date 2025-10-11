@@ -76,6 +76,16 @@ void t_kbeyond::setup_sr(double newsr) {
     update_quantum_walk();
 }
 
+std::vector<double> t_kbeyond::make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const {
+    std::uint32_t base = patternSeed >= 0 ? static_cast<std::uint32_t>(patternSeed)
+                                          : static_cast<std::uint32_t>(-patternSeed);
+    std::uint32_t mix = salt * 0x9E3779B9u + 0xA511E9B5u;
+    std::uint32_t seed = base ^ mix;
+    if (seed == 0)
+        seed = 0x9E3779B9u;
+    return prime_modes::generate_pattern(mode, count, seed);
+}
+
 void t_kbeyond::setup_predelay() {
     double maxSamples = kPredelayMaxSeconds * sr;
     double desired = std::ceil(maxSamples + kPredelaySafetySamples);
@@ -96,6 +106,14 @@ void t_kbeyond::setup_early() {
     double baseMs = 5.2;
     double scale = lerp(0.7, 1.45, size);
     int pairs = kEarlyTaps / 2;
+    int patternCount = pairs;
+    if (kEarlyTaps % 2 != 0)
+        ++patternCount;
+    if (patternCount <= 0)
+        patternCount = 1;
+    auto tapPattern = make_pattern(modeER, (std::size_t)patternCount, 0x1001u);
+    auto laserMidPattern = make_pattern(modeMid, kLaserTaps, 0x5001u);
+    auto laserSidePattern = make_pattern(modeSide, kLaserTaps, 0x5002u);
     auto storeTap = [&](int index, long samp, double gain, double pan) {
         double theta = (pan + 1.0) * (0.25 * M_PI);
         earlyDel[index] = samp;
@@ -104,12 +122,14 @@ void t_kbeyond::setup_early() {
         earlySin[index] = std::sin(theta);
     };
     for (int p = 0; p < pairs; ++p) {
-        double idx = (double)p / (double)std::max(1, pairs - 1);
-        double ms = baseMs * std::pow(phi, idx * 1.2);
+        double idxNorm = (p < (int)tapPattern.size())
+                             ? tapPattern[(std::size_t)p]
+                             : ((pairs > 1) ? (double)p / (double)(pairs - 1) : 0.5);
+        double ms = baseMs * std::pow(phi, idxNorm * 1.2);
         ms = std::min(ms * scale, maxMs);
         long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBufMid.size() - 2.0);
         double gain = std::pow(0.72, (double)p + 1.0);
-        double panMag = 1.0 - idx;
+        double panMag = 1.0 - idxNorm;
         double panLeft = -panMag;
         double panRight = panMag;
         storeTap(p, samp, gain, panLeft);
@@ -117,7 +137,8 @@ void t_kbeyond::setup_early() {
     }
     if (kEarlyTaps % 2 != 0) {
         int center = pairs;
-        double ms = baseMs * std::pow(phi, 0.65);
+        double idxNorm = (center < (int)tapPattern.size()) ? tapPattern[(std::size_t)center] : 0.65;
+        double ms = baseMs * std::pow(phi, idxNorm);
         ms = std::min(ms * scale, maxMs);
         long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBufMid.size() - 2.0);
         double gain = std::pow(0.72, (double)pairs + 1.0);
@@ -156,9 +177,15 @@ void t_kbeyond::setup_early() {
         laserShape[idx] = shape;
         double baseGain = 0.22 * std::pow(0.78, (double)idx * 0.55);
         double bright = lerp(0.78, 1.32, focus) * (1.0 + 0.22 * shape);
-        laserMidGain[idx] = baseGain * bright;
+        double midScale = (idx < (int)laserMidPattern.size())
+                              ? lerp(0.65, 1.45, laserMidPattern[(std::size_t)idx])
+                              : 1.0;
+        laserMidGain[idx] = baseGain * bright * midScale;
         double sideSign = next_code();
-        double sideWeight = lerp(0.18, 0.55, focus) * sideSign;
+        double sideScale = (idx < (int)laserSidePattern.size())
+                               ? lerp(0.65, 1.45, laserSidePattern[(std::size_t)idx])
+                               : 1.0;
+        double sideWeight = lerp(0.18, 0.55, focus) * sideSign * sideScale;
         laserSideGain[idx] = baseGain * sideWeight;
         double panBase = lerp(-0.9, 0.9, norm);
         double panJitter = 0.25 * next_code() * (1.0 - local);
@@ -279,8 +306,11 @@ void t_kbeyond::setup_fdn() {
     const double phi = 1.6180339887498948482;
     double baseMs = lerp(15.0, 55.0, size);
     double spread = lerp(0.65, 1.35, size);
+    auto latePattern = make_pattern(modeLate, N, 0x2001u);
     for (int i = 0; i < N; ++i) {
-        double idx = (double)i / (double)std::max(1, N - 1);
+        double idx = (i < (int)latePattern.size())
+                         ? latePattern[(std::size_t)i]
+                         : (double)i / (double)std::max(1, N - 1);
         double ms = baseMs * std::pow(phi, (idx - 0.5) * spread);
         ms = clampd(ms, 8.0, 400.0);
         double len = ms2samp(ms, sr);
@@ -291,11 +321,10 @@ void t_kbeyond::setup_fdn() {
         fdn_phase[i] = std::fmod((double)(i + 1) * 1.2345, 2.0 * M_PI);
         fdn_out[i] = 0.0;
         fdn_fb[i] = 0.0;
-        double angle = (2.0 * M_PI * (double)i) / (double)N;
-        inWeights[i] = 0.9 / (double)N * (1.0 + 0.35 * std::sin(angle * 0.73 + 0.2));
     }
     update_decay();
     reset_quantum_walk();
+    update_injection_weights();
 }
 
 void t_kbeyond::refresh_filters() {
@@ -312,20 +341,34 @@ void t_kbeyond::refresh_filters() {
     }
 }
 
+void t_kbeyond::update_injection_weights() {
+    auto midPattern = make_pattern(modeMid, N, 0x3001u);
+    for (int i = 0; i < N; ++i) {
+        double angle = (2.0 * M_PI * (double)i) / (double)N;
+        double base = 0.9 / (double)N * (1.0 + 0.35 * std::sin(angle * 0.73 + 0.2));
+        double scale = (i < (int)midPattern.size()) ? lerp(0.65, 1.45, midPattern[(std::size_t)i]) : 1.0;
+        inWeights[i] = base * scale;
+    }
+}
+
 void t_kbeyond::update_diffusion() {
     make_phi_vector<N>(u, clampd(phiweight, 0.0, 1.0));
 }
 
 void t_kbeyond::update_output_weights() {
     double widthNorm = clampd(width, 0.0, 2.0);
+    auto midPattern = make_pattern(modeMid, N, 0x4001u);
+    auto sidePattern = make_pattern(modeSide, N, 0x4002u);
     double normL = 0.0;
     double normR = 0.0;
     for (int i = 0; i < N; ++i) {
         double angle = (2.0 * M_PI * (double)i) / (double)N;
         double l = std::sin(angle * 0.91 + 0.17);
         double r = std::cos(angle * 1.07 - 0.11);
-        double mid = 0.5 * (l + r);
-        double side = 0.5 * (l - r);
+        double midScale = (i < (int)midPattern.size()) ? lerp(0.6, 1.4, midPattern[(std::size_t)i]) : 1.0;
+        double sideScale = (i < (int)sidePattern.size()) ? lerp(0.6, 1.4, sidePattern[(std::size_t)i]) : 1.0;
+        double mid = 0.5 * (l + r) * midScale;
+        double side = 0.5 * (l - r) * sideScale;
         outBaseMid[i] = mid;
         outBaseSide[i] = side;
         double wL = mid + widthNorm * side;
@@ -652,6 +695,192 @@ t_max_err kbeyond_attr_set_uwalkrate(t_kbeyond* x, void* attr, long argc, t_atom
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->uwalkRate, 0.0, 8.0, &t_kbeyond::update_quantum_walk);
 }
 
+static t_symbol* symbol_from_pattern(prime_modes::Pattern pattern) {
+    switch (pattern) {
+    case prime_modes::Pattern::Prime:
+        return gensym("prime");
+    case prime_modes::Pattern::Aureo:
+        return gensym("aureo");
+    case prime_modes::Pattern::Plastica:
+        return gensym("plastica");
+    case prime_modes::Pattern::PrimeAureo:
+        return gensym("prime_aureo");
+    default:
+        return gensym("aureo");
+    }
+}
+
+static prime_modes::Pattern pattern_from_symbol(t_symbol* sym, prime_modes::Pattern fallback) {
+    if (!sym)
+        return fallback;
+    if (sym == gensym("prime"))
+        return prime_modes::Pattern::Prime;
+    if (sym == gensym("aureo"))
+        return prime_modes::Pattern::Aureo;
+    if (sym == gensym("plastica"))
+        return prime_modes::Pattern::Plastica;
+    if (sym == gensym("prime_aureo"))
+        return prime_modes::Pattern::PrimeAureo;
+    return fallback;
+}
+
+t_max_err kbeyond_attr_set_mode_er(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    if (!x)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    t_symbol* sym = (argc > 0 && argv) ? atom_getsym(argv) : x->modeERSym;
+    if (!sym)
+        sym = gensym("aureo");
+    x->modeER = pattern_from_symbol(sym, x->modeER);
+    x->modeERSym = symbol_from_pattern(x->modeER);
+    x->setup_early();
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_get_mode_er(t_kbeyond* x, void* attr, long* argc, t_atom** argv) {
+    if (!x || !argc || !argv)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    if (!*argv)
+        *argv = (t_atom*)sysmem_newptr(sizeof(t_atom));
+    if (!*argv) {
+        *argc = 0;
+        return MAX_ERR_GENERIC;
+    }
+    *argc = 1;
+    t_symbol* sym = x->modeERSym ? x->modeERSym : symbol_from_pattern(x->modeER);
+    atom_setsym(*argv, sym);
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_set_mode_late(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    if (!x)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    t_symbol* sym = (argc > 0 && argv) ? atom_getsym(argv) : x->modeLateSym;
+    if (!sym)
+        sym = gensym("prime_aureo");
+    x->modeLate = pattern_from_symbol(sym, x->modeLate);
+    x->modeLateSym = symbol_from_pattern(x->modeLate);
+    x->setup_fdn();
+    x->update_output_weights();
+    x->update_modulators();
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_get_mode_late(t_kbeyond* x, void* attr, long* argc, t_atom** argv) {
+    if (!x || !argc || !argv)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    if (!*argv)
+        *argv = (t_atom*)sysmem_newptr(sizeof(t_atom));
+    if (!*argv) {
+        *argc = 0;
+        return MAX_ERR_GENERIC;
+    }
+    *argc = 1;
+    t_symbol* sym = x->modeLateSym ? x->modeLateSym : symbol_from_pattern(x->modeLate);
+    atom_setsym(*argv, sym);
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_set_mode_mid(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    if (!x)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    t_symbol* sym = (argc > 0 && argv) ? atom_getsym(argv) : x->modeMidSym;
+    if (!sym)
+        sym = gensym("prime");
+    x->modeMid = pattern_from_symbol(sym, x->modeMid);
+    x->modeMidSym = symbol_from_pattern(x->modeMid);
+    x->update_injection_weights();
+    x->setup_early();
+    x->update_output_weights();
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_get_mode_mid(t_kbeyond* x, void* attr, long* argc, t_atom** argv) {
+    if (!x || !argc || !argv)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    if (!*argv)
+        *argv = (t_atom*)sysmem_newptr(sizeof(t_atom));
+    if (!*argv) {
+        *argc = 0;
+        return MAX_ERR_GENERIC;
+    }
+    *argc = 1;
+    t_symbol* sym = x->modeMidSym ? x->modeMidSym : symbol_from_pattern(x->modeMid);
+    atom_setsym(*argv, sym);
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_set_mode_side(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    if (!x)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    t_symbol* sym = (argc > 0 && argv) ? atom_getsym(argv) : x->modeSideSym;
+    if (!sym)
+        sym = gensym("aureo");
+    x->modeSide = pattern_from_symbol(sym, x->modeSide);
+    x->modeSideSym = symbol_from_pattern(x->modeSide);
+    x->setup_early();
+    x->update_output_weights();
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_get_mode_side(t_kbeyond* x, void* attr, long* argc, t_atom** argv) {
+    if (!x || !argc || !argv)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    if (!*argv)
+        *argv = (t_atom*)sysmem_newptr(sizeof(t_atom));
+    if (!*argv) {
+        *argc = 0;
+        return MAX_ERR_GENERIC;
+    }
+    *argc = 1;
+    t_symbol* sym = x->modeSideSym ? x->modeSideSym : symbol_from_pattern(x->modeSide);
+    atom_setsym(*argv, sym);
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_set_seed(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    if (!x)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    long value = x->patternSeed;
+    if (argc > 0 && argv) {
+        if (atom_gettype(argv) == A_LONG)
+            value = atom_getlong(argv);
+        else if (atom_gettype(argv) == A_FLOAT)
+            value = (long)std::llround(atom_getfloat(argv));
+    }
+    if (value < 0)
+        value = -value;
+    x->patternSeed = value;
+    x->setup_early();
+    x->setup_fdn();
+    x->update_output_weights();
+    x->update_modulators();
+    return MAX_ERR_NONE;
+}
+
+t_max_err kbeyond_attr_get_seed(t_kbeyond* x, void* attr, long* argc, t_atom** argv) {
+    if (!x || !argc || !argv)
+        return MAX_ERR_GENERIC;
+    (void)attr;
+    if (!*argv)
+        *argv = (t_atom*)sysmem_newptr(sizeof(t_atom));
+    if (!*argv) {
+        *argc = 0;
+        return MAX_ERR_GENERIC;
+    }
+    *argc = 1;
+    atom_setlong(*argv, x->patternSeed);
+    return MAX_ERR_NONE;
+}
+
 t_max_err kbeyond_attr_set_mode_mix(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     if (!x)
         return MAX_ERR_GENERIC;
@@ -713,6 +942,16 @@ void *kbeyond_new(t_symbol *, long argc, t_atom *argv) {
 
     x->mixMode = t_kbeyond::MixMode::Householder;
     x->modeMixSym = gensym("householder");
+
+    x->modeER = prime_modes::Pattern::Aureo;
+    x->modeLate = prime_modes::Pattern::PrimeAureo;
+    x->modeMid = prime_modes::Pattern::Prime;
+    x->modeSide = prime_modes::Pattern::Aureo;
+    x->modeERSym = symbol_from_pattern(x->modeER);
+    x->modeLateSym = symbol_from_pattern(x->modeLate);
+    x->modeMidSym = symbol_from_pattern(x->modeMid);
+    x->modeSideSym = symbol_from_pattern(x->modeSide);
+    x->patternSeed = 1337;
 
     x->coherence = 0.8;
     x->uwalkRate = 0.25;
@@ -962,6 +1201,31 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "uwalkrate", 0, t_kbeyond, uwalkRate);
     CLASS_ATTR_ACCESSORS(c, "uwalkrate", NULL, kbeyond_attr_set_uwalkrate);
     CLASS_ATTR_FILTER_CLIP(c, "uwalkrate", 0.0, 8.0);
+
+    CLASS_ATTR_SYM(c, "mode_er", 0, t_kbeyond, modeERSym);
+    CLASS_ATTR_ACCESSORS(c, "mode_er", kbeyond_attr_get_mode_er, kbeyond_attr_set_mode_er);
+    CLASS_ATTR_ENUM(c, "mode_er", 0, "prime aureo plastica prime_aureo");
+    CLASS_ATTR_LABEL(c, "mode_er", 0, "Early Pattern Mode");
+
+    CLASS_ATTR_SYM(c, "mode_late", 0, t_kbeyond, modeLateSym);
+    CLASS_ATTR_ACCESSORS(c, "mode_late", kbeyond_attr_get_mode_late, kbeyond_attr_set_mode_late);
+    CLASS_ATTR_ENUM(c, "mode_late", 0, "prime aureo plastica prime_aureo");
+    CLASS_ATTR_LABEL(c, "mode_late", 0, "Late Pattern Mode");
+
+    CLASS_ATTR_SYM(c, "mode_mid", 0, t_kbeyond, modeMidSym);
+    CLASS_ATTR_ACCESSORS(c, "mode_mid", kbeyond_attr_get_mode_mid, kbeyond_attr_set_mode_mid);
+    CLASS_ATTR_ENUM(c, "mode_mid", 0, "prime aureo plastica prime_aureo");
+    CLASS_ATTR_LABEL(c, "mode_mid", 0, "Mid Routing Mode");
+
+    CLASS_ATTR_SYM(c, "mode_side", 0, t_kbeyond, modeSideSym);
+    CLASS_ATTR_ACCESSORS(c, "mode_side", kbeyond_attr_get_mode_side, kbeyond_attr_set_mode_side);
+    CLASS_ATTR_ENUM(c, "mode_side", 0, "prime aureo plastica prime_aureo");
+    CLASS_ATTR_LABEL(c, "mode_side", 0, "Side Routing Mode");
+
+    CLASS_ATTR_LONG(c, "seed", 0, t_kbeyond, patternSeed);
+    CLASS_ATTR_ACCESSORS(c, "seed", kbeyond_attr_get_seed, kbeyond_attr_set_seed);
+    CLASS_ATTR_FILTER_MIN(c, "seed", 0);
+    CLASS_ATTR_LABEL(c, "seed", 0, "Pattern Seed");
 
     CLASS_ATTR_SYM(c, "mode_mix", 0, t_kbeyond, modeMixSym);
     CLASS_ATTR_ACCESSORS(c, "mode_mix", kbeyond_attr_get_mode_mix, kbeyond_attr_set_mode_mix);

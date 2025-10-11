@@ -45,6 +45,8 @@ using t_max_err = int;
 #include <cstdint>
 #include <algorithm>
 
+#include "dsp/prime_modes.h"
+
 struct t_kbeyond;
 
 void *kbeyond_new(t_symbol *s, long argc, t_atom *argv);
@@ -215,6 +217,16 @@ struct t_kbeyond {
     MixMode   mixMode = MixMode::Householder;
     t_symbol *modeMixSym = nullptr;
 
+    prime_modes::Pattern modeER = prime_modes::Pattern::Aureo;
+    prime_modes::Pattern modeLate = prime_modes::Pattern::PrimeAureo;
+    prime_modes::Pattern modeMid = prime_modes::Pattern::Prime;
+    prime_modes::Pattern modeSide = prime_modes::Pattern::Aureo;
+    long patternSeed = 1337;
+    t_symbol *modeERSym = nullptr;
+    t_symbol *modeLateSym = nullptr;
+    t_symbol *modeMidSym = nullptr;
+    t_symbol *modeSideSym = nullptr;
+
     // Decay / damping
     double decay    = 0.0;  // seconds, 0 disables RT60 mapping
     double dampLF   = 0.2;
@@ -262,6 +274,8 @@ struct t_kbeyond {
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
     void apply_quantum_walk(std::array<double, N> &feedback);
     void render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);
+    void update_injection_weights();
+    std::vector<double> make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const;
     inline double tiny() {
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
         return (double)(rng & 0xFFFFFF) * 1.0e-12 * (1.0/16777216.0);
