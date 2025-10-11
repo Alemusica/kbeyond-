@@ -209,10 +209,12 @@ void *kbeyond_new(t_symbol *, long argc, t_atom *argv) {
     outlet_new((t_object *)x, "signal");
     outlet_new((t_object *)x, "signal");
 
-    x->setup_sr(sys_getsr() > 0.0 ? sys_getsr() : 48000.0);
-
-    if (argc > 0)
+    if (argc > 0 && (atom_gettype(argv) == A_LONG || atom_gettype(argv) == A_FLOAT))
         kbeyond_attr_set_phiweight(x, nullptr, 1, argv);
+
+    attr_args_process(x, argc, argv);
+
+    x->setup_sr(sys_getsr() > 0.0 ? sys_getsr() : 48000.0);
 
     return x;
 }
