@@ -157,7 +157,8 @@ struct t_kbeyond {
 
     // Early reflections
     static const int kEarlyTaps = 12;
-    DelayLine earlyBuf;
+    DelayLine earlyBufMid;
+    DelayLine earlyBufSide;
     std::array<long, kEarlyTaps> earlyDel {};
     std::array<double, kEarlyTaps> earlyGain {};
     std::array<double, kEarlyTaps> earlyCos {};
@@ -217,7 +218,7 @@ struct t_kbeyond {
     void update_modulators();
     void update_decay();
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
-    void render_early(double midIn, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);
+    void render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR);
     inline double tiny() {
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
         return (double)(rng & 0xFFFFFF) * 1.0e-12 * (1.0/16777216.0);

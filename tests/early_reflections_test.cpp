@@ -20,12 +20,26 @@ bool test_early_reflections() {
     std::vector<double> left(frames, 0.0);
     std::vector<double> right(frames, 0.0);
     for (int n = 0; n < frames; ++n) {
-        double midIn = (n == 0) ? 1.0 : 0.0;
+        double inL = (n == 0) ? 1.0 : 0.0;
+        double inR = inL;
         double l = 0.0;
         double r = 0.0;
-        x.render_early(midIn, x.width, x.early, l, r);
+        x.render_early(inL, inR, x.width, x.early, l, r);
         left[n] = l;
         right[n] = r;
+    }
+
+    // Ensure a left-only impulse produces a wider response on the left channel.
+    std::vector<double> leftOnly(frames, 0.0);
+    std::vector<double> rightOnly(frames, 0.0);
+    for (int n = 0; n < frames; ++n) {
+        double lIn = (n == 0) ? 1.0 : 0.0;
+        double rIn = 0.0;
+        double l = 0.0;
+        double r = 0.0;
+        x.render_early(lIn, rIn, x.width, x.early, l, r);
+        leftOnly[n] = l;
+        rightOnly[n] = r;
     }
 
     double peakL = 0.0;
@@ -40,6 +54,18 @@ bool test_early_reflections() {
 
     if (std::abs(diffDb) > 0.1) {
         std::cerr << "Mono impulse early response imbalance: " << diffDb << " dB" << std::endl;
+        return false;
+    }
+
+    double leftPeak = 0.0;
+    double rightPeak = 0.0;
+    for (int n = 0; n < frames; ++n) {
+        leftPeak = std::max(leftPeak, std::abs(leftOnly[n]));
+        rightPeak = std::max(rightPeak, std::abs(rightOnly[n]));
+    }
+
+    if (!(leftPeak > rightPeak * 1.1)) {
+        std::cerr << "Left-only impulse did not produce wider left response" << std::endl;
         return false;
     }
 

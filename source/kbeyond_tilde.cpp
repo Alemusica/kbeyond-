@@ -80,7 +80,8 @@ void t_kbeyond::setup_predelay() {
 void t_kbeyond::setup_early() {
     double maxMs = 120.0;
     size_t len = (size_t)std::ceil(ms2samp(maxMs * 1.25, sr) + 8.0);
-    earlyBuf.setup(len);
+    earlyBufMid.setup(len);
+    earlyBufSide.setup(len);
     const double phi = 1.6180339887498948482;
     double baseMs = 5.2;
     double scale = lerp(0.7, 1.45, size);
@@ -96,7 +97,7 @@ void t_kbeyond::setup_early() {
         double idx = (double)p / (double)std::max(1, pairs - 1);
         double ms = baseMs * std::pow(phi, idx * 1.2);
         ms = std::min(ms * scale, maxMs);
-        long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBuf.size() - 2.0);
+        long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBufMid.size() - 2.0);
         double gain = std::pow(0.72, (double)p + 1.0);
         double panMag = 1.0 - idx;
         double panLeft = -panMag;
@@ -108,26 +109,37 @@ void t_kbeyond::setup_early() {
         int center = pairs;
         double ms = baseMs * std::pow(phi, 0.65);
         ms = std::min(ms * scale, maxMs);
-        long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBuf.size() - 2.0);
+        long samp = (long)clampd(std::floor(ms2samp(ms, sr)), 1.0, (double)earlyBufMid.size() - 2.0);
         double gain = std::pow(0.72, (double)pairs + 1.0);
         storeTap(center, samp, gain, 0.0);
     }
 }
 
-void t_kbeyond::render_early(double midIn, double widthNorm, double earlyAmt, double &earlyL, double &earlyR) {
+void t_kbeyond::render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR) {
     widthNorm = clampd(widthNorm, 0.0, 2.0);
     double wMain = 0.5 * (1.0 + widthNorm);
     double wCross = 0.5 * (1.0 - widthNorm);
-    earlyBuf.write(midIn + tiny());
+    double midIn = 0.5 * (inL + inR);
+    double sideIn = 0.5 * (inL - inR);
+    earlyBufMid.write(midIn + tiny());
+    earlyBufSide.write(sideIn + tiny());
+    double sideBlend = clampd(0.5 * widthNorm, 0.0, 1.0);
     double left = 0.0;
     double right = 0.0;
     for (int tap = 0; tap < kEarlyTaps; ++tap) {
-        double tapSample = earlyBuf.readInt(earlyDel[tap]);
-        double energy = tapSample * earlyGain[tap];
-        double baseL = energy * earlyCos[tap];
-        double baseR = energy * earlySin[tap];
-        left += wMain * baseL + wCross * baseR;
-        right += wCross * baseL + wMain * baseR;
+        double tapMid = earlyBufMid.readInt(earlyDel[tap]);
+        double tapSide = earlyBufSide.readInt(earlyDel[tap]);
+        double gain = earlyGain[tap];
+        double cosTheta = earlyCos[tap];
+        double sinTheta = earlySin[tap];
+        double baseL = tapMid * gain * cosTheta;
+        double baseR = tapMid * gain * sinTheta;
+        double sideL = tapSide * gain * cosTheta;
+        double sideR = -tapSide * gain * sinTheta;
+        double mixL = baseL + sideBlend * sideL;
+        double mixR = baseR + sideBlend * sideR;
+        left += wMain * mixL + wCross * mixR;
+        right += wCross * mixL + wMain * mixR;
     }
     earlyL = left * earlyAmt;
     earlyR = right * earlyAmt;
@@ -486,7 +498,7 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
 
         double earlyL = 0.0;
         double earlyR = 0.0;
-        x->render_early(midIn, widthNorm, earlyAmt, earlyL, earlyR);
+        x->render_early(predOutL, predOutR, widthNorm, earlyAmt, earlyL, earlyR);
 
         std::array<double, t_kbeyond::N> vec {};
         for (int l = 0; l < t_kbeyond::N; ++l) {
