@@ -8,7 +8,7 @@
 // Inlets:  2 (signal L/R)
 // Outlets: 2 (signal L/R)
 // Attributes (0..1 unless specified):
-//   @regen, @decay(seconds), @derez, @filter, @early, @predelay (0..0.5 seconds), @mix,
+//   @regen, @decay(seconds), @derez, @filter, @early, @predelay (0..0.5 seconds, runtime ≥1 sample), @mix,
 //   @width(0..2), @size(0..1), @color(-1..+1), @modrate(Hz), @moddepth(samples),
 //   @damplf, @dampmf, @damphf, @phiweight(0..1)
 // Notes:

@@ -399,7 +399,7 @@ t_max_err kbeyond_attr_set_focus(t_kbeyond* x, void* attr, long argc, t_atom* ar
 t_max_err kbeyond_attr_set_predelay(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->predelay, 0.0, t_kbeyond::kPredelayMaxSeconds, &t_kbeyond::setup_predelay);
     if (!err)
-        x->predSamps = clampd(x->predelay * x->sr, 0.0, std::max(0.0, (double)x->predL.size() - 4.0));
+        x->predSamps = std::max(1.0, clampd(x->predelay * x->sr, 0.0, std::max(0.0, (double)x->predL.size() - 4.0)));
     return err;
 }
 
