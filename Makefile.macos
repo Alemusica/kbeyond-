@@ -22,7 +22,8 @@ endif
 ifeq ($(wildcard $(MSP_INCLUDES)/z_dsp.h),)
 $(error Missing z_dsp.h under $(MSP_INCLUDES). Check that the Max SDK is fully extracted.)
 endif
-SRC := source/kbeyond_tilde.cpp
+SRC := source/kbeyond_tilde.cpp \
+    source/dsp/prime_modes.cpp
 OUT := build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~
 CXX := clang++
 CXXFLAGS := -std=c++17 -arch x86_64 -fPIC -stdlib=libc++ -mmacosx-version-min=10.13 \
