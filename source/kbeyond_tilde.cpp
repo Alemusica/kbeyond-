@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <numeric>
 #include <cstdio>
+#include <cstddef>
+
+static constexpr std::size_t kAssistStringMax = 256;
 
 static t_class* s_kbeyond_class = nullptr;
 
@@ -221,14 +224,14 @@ void kbeyond_free(t_kbeyond *x) {
 void kbeyond_assist(t_kbeyond *x, void *b, long m, long a, char *s) {
     if (m == ASSIST_INLET) {
         if (a == 0)
-            std::snprintf(s, ASSIST_STRING_MAXSIZE, "Signal L (with attributes)");
+            std::snprintf(s, kAssistStringMax, "Signal L (with attributes)");
         else
-            std::snprintf(s, ASSIST_STRING_MAXSIZE, "Signal R");
+            std::snprintf(s, kAssistStringMax, "Signal R");
     } else {
         if (a == 0)
-            std::snprintf(s, ASSIST_STRING_MAXSIZE, "Wet L out");
+            std::snprintf(s, kAssistStringMax, "Wet L out");
         else
-            std::snprintf(s, ASSIST_STRING_MAXSIZE, "Wet R out");
+            std::snprintf(s, kAssistStringMax, "Wet R out");
     }
 }
 
