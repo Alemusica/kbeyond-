@@ -39,16 +39,16 @@ void write_feedback(FdnState &state,
                     double sideIn,
                     uint32_t &rng,
                     const std::array<double, kFdnSize> &inWeights,
-                    const std::array<double, kFdnSize> &outWeightsL,
-                    const std::array<double, kFdnSize> &outWeightsR,
+                    const std::array<double, kFdnSize> &sideWeights,
+                    const std::array<double, kFdnSize> &midWeights,
                     const std::array<double, kFdnSize> &decay,
                     std::array<filters::OnePoleLP, kFdnSize> &low,
                     std::array<filters::OnePoleLP, kFdnSize> &high,
                     double dampLF,
                     double dampMF,
                     double dampHF,
-                    double &tailL,
-                    double &tailR);
+                    double &tailMid,
+                    double &tailSide);
 
 } // namespace kbeyond::dsp
 

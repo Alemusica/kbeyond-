@@ -52,19 +52,20 @@ bool run_motion_width_response() {
 
     runBlock(0.0);
 
+    const int settleBlocks = 128;
     double lowWidth = 0.0;
-    for (int n = 0; n < 6; ++n)
+    for (int n = 0; n < settleBlocks; ++n)
         lowWidth = runBlock(0.05);
 
     double highWidth = 0.0;
-    for (int n = 0; n < 3; ++n)
+    for (int n = 0; n < settleBlocks; ++n)
         highWidth = runBlock(1.0);
 
     double energyL = weights_energy(x.outWeightsL);
     double energyR = weights_energy(x.outWeightsR);
 
     double widthBack = 0.0;
-    for (int n = 0; n < 3; ++n)
+    for (int n = 0; n < settleBlocks; ++n)
         widthBack = runBlock(0.05);
 
     if (!(highWidth > lowWidth + 0.05)) {

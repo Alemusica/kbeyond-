@@ -27,7 +27,9 @@ extern "C" {
 #define C74_EXPORT
 #endif
 #else
-struct t_pxobject {};
+struct t_pxobject {
+    int z_disabled = 0;
+};
 struct t_symbol {};
 struct t_atom {};
 struct t_object {};
@@ -124,6 +126,8 @@ struct t_kbeyond {
     // Output mapping
     std::array<double, N> outBaseMid {};
     std::array<double, N> outBaseSide {};
+    std::array<double, N> outMidBasis {};
+    std::array<double, N> outWeightsSide {};
     std::array<double, N> outWeightsL {};
     std::array<double, N> outWeightsR {};
 
@@ -186,6 +190,8 @@ struct t_kbeyond {
     void apply_quantum_walk(std::array<double, N> &feedback);
     void update_injection_weights();
     void apply_width(double widthNorm);
+    void update_output_basis();
+    void mix_mid_side_to_lr(double tailMid, double tailSide, double widthNorm, double &outL, double &outR) const;
     std::vector<double> make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const;
 
 #ifdef KBEYOND_UNIT_TEST
