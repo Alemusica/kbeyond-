@@ -27,11 +27,12 @@ README.md / CHANGELOG.md / LICENSE / .gitignore
 
 ## Build con CMake
 ```bash
-export MAX_SDK_ROOT=/percorso/al/max-sdk
+export MAX_SDK_ROOT=/percorso/al/max-sdk   # oppure passare -DMAX_SDK_ROOT=/percorso/al/max-sdk a cmake
+./scripts/verify_max_sdk.sh               # controllo opzionale ma consigliato
 cmake -S . -B build/Release -DCMAKE_BUILD_TYPE=Release
 cmake --build build/Release --config Release
 ```
-Se `cmake` termina immediatamente con un errore che menziona `ext.h` o `z_dsp.h`, significa che il percorso fornito in `MAX_SDK_ROOT` non contiene un Max SDK valido (ad esempio la cartella `source/c74support` manca oppure è una versione incompleta). Assicurarsi di avere scaricato e scompattato il Max SDK ufficiale e riprovare.
+Se `cmake` termina immediatamente con un errore che menziona `ext.h` o `z_dsp.h`, significa che il percorso fornito in `MAX_SDK_ROOT` (o passato tramite `-DMAX_SDK_ROOT`) non contiene un Max SDK valido (ad esempio la cartella `source/c74support` manca oppure è una versione incompleta). Assicurarsi di avere scaricato e scompattato il Max SDK ufficiale e riprovare. Lo script `scripts/verify_max_sdk.sh` permette di controllare rapidamente che i file richiesti (`ext.h`, `z_dsp.h`) siano presenti prima di configurare la build.
 Gli artefatti prodotti (`kbeyond~.mxo` su macOS, `kbeyond~.mxe64` su Windows) verranno creati in `build/Release`. Copiare il file risultante nella cartella `externals/` del package Max.
 
 ## Script automatizzati
