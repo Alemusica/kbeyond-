@@ -70,6 +70,34 @@
         "phiweight": 0.5,
         "mode_mix": "hybrid"
       }
+    },
+    {
+      "name": "Laser Sweep",
+      "description": "Cluster laser chirp-coded con Q-switch dinamico",
+      "attributes": {
+        "regen": 0.68,
+        "decay": 0.0,
+        "derez": 0.85,
+        "filter": 0.7,
+        "early": 0.38,
+        "predelay": 0.045,
+        "mix": 0.62,
+        "width": 1.45,
+        "size": 0.7,
+        "color": 0.12,
+        "damplf": 0.18,
+        "dampmf": 0.0,
+        "damphf": 0.62,
+        "modrate": 0.28,
+        "moddepth": 5.5,
+        "phiweight": 0.68,
+        "mode_mix": "hybrid",
+        "laser": 0.85,
+        "laserfocus": 0.65,
+        "lasergate": 0.32,
+        "laserwindow": 0.42,
+        "laserdiffusion": 0.72
+      }
     }
   ]
 }

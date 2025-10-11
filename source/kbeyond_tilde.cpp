@@ -59,6 +59,15 @@ void t_kbeyond::setup_sr(double newsr) {
     vs = std::max<long>(64, vs);
     setup_predelay();
     setup_early();
+    update_laser_gate();
+    update_laser_window();
+    update_laser_phase_inc();
+    update_laser_envelope();
+    laserEnv = 0.0;
+    laserExcite = 0.0;
+    qswitchEnv = 0.0;
+    qswitchCounter = 0;
+    laserPhase = 0.0;
     setup_fdn();
     refresh_filters();
     update_diffusion();
@@ -114,6 +123,81 @@ void t_kbeyond::setup_early() {
         double gain = std::pow(0.72, (double)pairs + 1.0);
         storeTap(center, samp, gain, 0.0);
     }
+
+    double focus = clampd(laserFocus, 0.0, 1.0);
+    double baseLaser = lerp(6.5, 17.5, size);
+    double groupSpacing = lerp(3.0, 9.5, size);
+    double clusterSpan = lerp(2.2, 7.8, focus);
+    double chirpSpan = lerp(0.6, 4.2, focus);
+    double jitterAmt = lerp(0.08, 0.35, focus);
+    uint32_t lfsr = 0x1Fu;
+    auto next_code = [&]() {
+        int bit = ((lfsr >> 4) ^ (lfsr >> 2)) & 1;
+        lfsr = ((lfsr << 1) & 0x1F) | bit;
+        return (lfsr & 1) ? 1.0 : -1.0;
+    };
+    double maxDelay = (double)earlyBufMid.size() - 2.0;
+    for (int idx = 0; idx < kLaserTaps; ++idx) {
+        double norm = (kLaserTaps > 1) ? (double)idx / (double)(kLaserTaps - 1) : 0.0;
+        double groupFloat = norm * (double)kLaserGroups;
+        int group = (int)std::floor(groupFloat);
+        if (group >= kLaserGroups)
+            group = kLaserGroups - 1;
+        double local = groupFloat - (double)group;
+        double startMs = baseLaser + groupSpacing * (double)group;
+        double sweep = clusterSpan * (1.0 + 0.27 * (double)group);
+        double chirp = chirpSpan * local * local;
+        double jitter = jitterAmt * next_code() * (1.0 - local);
+        double tapMs = clampd(startMs + local * sweep + chirp + jitter, 1.0, maxMs - 1.0);
+        double delaySamp = clampd(ms2samp(tapMs, sr), 1.0, maxDelay);
+        laserDelay[idx] = delaySamp;
+
+        double shape = next_code();
+        laserShape[idx] = shape;
+        double baseGain = 0.22 * std::pow(0.78, (double)idx * 0.55);
+        double bright = lerp(0.78, 1.32, focus) * (1.0 + 0.22 * shape);
+        laserMidGain[idx] = baseGain * bright;
+        double sideSign = next_code();
+        double sideWeight = lerp(0.18, 0.55, focus) * sideSign;
+        laserSideGain[idx] = baseGain * sideWeight;
+        double panBase = lerp(-0.9, 0.9, norm);
+        double panJitter = 0.25 * next_code() * (1.0 - local);
+        double pan = clampd(panBase + panJitter, -1.0, 1.0);
+        double theta = (pan + 1.0) * (0.25 * M_PI);
+        laserCos[idx] = std::cos(theta);
+        laserSin[idx] = std::sin(theta);
+    }
+}
+
+void t_kbeyond::update_laser_gate() {
+    double g = clampd(laserGate, 0.0, 1.0);
+    laserGateScaled = 0.004 + 0.25 * g * g;
+}
+
+void t_kbeyond::update_laser_window() {
+    double winSec = clampd(laserWindow, 0.2, 0.6);
+    qswitchWindowSamples = (long)std::llround(winSec * sr);
+    if (qswitchWindowSamples < 1)
+        qswitchWindowSamples = 1;
+    if (qswitchCounter > qswitchWindowSamples)
+        qswitchCounter = qswitchWindowSamples;
+}
+
+void t_kbeyond::update_laser_phase_inc() {
+    double focus = clampd(laserFocus, 0.0, 1.0);
+    double sweepHz = lerp(0.5, 7.0, focus);
+    laserPhaseInc = 2.0 * M_PI * sweepHz / std::max(1.0, sr);
+}
+
+void t_kbeyond::update_laser_envelope() {
+    double attackTime = 0.0035;
+    double releaseTime = 0.12;
+    laserEnvAttack = std::exp(-1.0 / std::max(1.0, sr * attackTime));
+    laserEnvRelease = std::exp(-1.0 / std::max(1.0, sr * releaseTime));
+    double qAttackTime = 0.004;
+    double qReleaseTime = 0.24;
+    qswitchAttack = std::exp(-1.0 / std::max(1.0, sr * qAttackTime));
+    qswitchRelease = std::exp(-1.0 / std::max(1.0, sr * qReleaseTime));
 }
 
 void t_kbeyond::render_early(double inL, double inR, double widthNorm, double earlyAmt, double &earlyL, double &earlyR) {
@@ -122,6 +206,12 @@ void t_kbeyond::render_early(double inL, double inR, double widthNorm, double ea
     double wCross = 0.5 * (1.0 - widthNorm);
     double midIn = 0.5 * (inL + inR);
     double sideIn = 0.5 * (inL - inR);
+    double detector = std::max(std::fabs(midIn), std::fabs(sideIn));
+    double envCoef = (detector > laserEnv) ? laserEnvAttack : laserEnvRelease;
+    laserEnv = lerp(detector, laserEnv, envCoef);
+    double gateBase = clampd((laserEnv - laserGateScaled) / 0.3, 0.0, 1.0);
+    double clusterGate = std::sqrt(gateBase);
+    laserExcite = clusterGate;
     earlyBufMid.write(midIn + tiny());
     earlyBufSide.write(sideIn + tiny());
     double sideBlend = clampd(0.5 * widthNorm, 0.0, 1.0);
@@ -141,6 +231,45 @@ void t_kbeyond::render_early(double inL, double inR, double widthNorm, double ea
         double mixR = baseR + sideBlend * sideR;
         left += wMain * mixL + wCross * mixR;
         right += wCross * mixL + wMain * mixR;
+    }
+    double clusterAmt = clampd(laser, 0.0, 1.0);
+    if (clusterAmt > 0.0) {
+        double phaseNow = laserPhase;
+        laserPhase += laserPhaseInc;
+        if (laserPhase >= 2.0 * M_PI)
+            laserPhase -= 2.0 * M_PI;
+        double swirl = std::sin(phaseNow);
+        double swirlB = std::sin(phaseNow * 0.5 + 1.0471975511965976);
+        double swirlMix = 0.5 * (swirl + swirlB);
+        double modDepth = lerp(0.25, 0.9, clusterAmt * clusterAmt);
+        double gate = clusterGate * clusterGate;
+        if (gate < 1.0e-6)
+            gate = 0.0;
+        if (gate > 0.0) {
+            double clusterL = 0.0;
+            double clusterR = 0.0;
+            for (int tap = 0; tap < kLaserTaps; ++tap) {
+                double tapMid = earlyBufMid.readFrac(laserDelay[tap]);
+                double tapSide = earlyBufSide.readFrac(laserDelay[tap]);
+                double mod = 1.0 + modDepth * swirlMix * laserShape[tap];
+                double midGain = laserMidGain[tap] * mod;
+                double sideGain = laserSideGain[tap] * mod;
+                double cosTheta = laserCos[tap];
+                double sinTheta = laserSin[tap];
+                double baseL = tapMid * midGain * cosTheta;
+                double baseR = tapMid * midGain * sinTheta;
+                double sideL = tapSide * sideGain * cosTheta;
+                double sideR = -tapSide * sideGain * sinTheta;
+                clusterL += baseL + sideL;
+                clusterR += baseR + sideR;
+            }
+            left += clusterAmt * gate * clusterL;
+            right += clusterAmt * gate * clusterR;
+        }
+    } else {
+        laserPhase += laserPhaseInc;
+        if (laserPhase >= 2.0 * M_PI)
+            laserPhase -= 2.0 * M_PI;
     }
     earlyL = left * earlyAmt;
     earlyR = right * earlyAmt;
@@ -486,6 +615,35 @@ t_max_err kbeyond_attr_set_phiweight(t_kbeyond* x, void* attr, long argc, t_atom
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->phiweight, 0.0, 1.0, &t_kbeyond::update_diffusion);
 }
 
+t_max_err kbeyond_attr_set_laser(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->laser, 0.0, 1.0, nullptr);
+}
+
+t_max_err kbeyond_attr_set_laserfocus(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->laserFocus, 0.0, 1.0, &t_kbeyond::setup_early);
+    if (!err)
+        x->update_laser_phase_inc();
+    return err;
+}
+
+t_max_err kbeyond_attr_set_lasergate(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->laserGate, 0.0, 1.0, nullptr);
+    if (!err)
+        x->update_laser_gate();
+    return err;
+}
+
+t_max_err kbeyond_attr_set_laserwindow(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    t_max_err err = kbeyond_attr_set_double(x, attr, argc, argv, &x->laserWindow, 0.2, 0.6, nullptr);
+    if (!err)
+        x->update_laser_window();
+    return err;
+}
+
+t_max_err kbeyond_attr_set_laserdiffusion(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
+    return kbeyond_attr_set_double(x, attr, argc, argv, &x->laserDiffusion, 0.0, 1.0, nullptr);
+}
+
 t_max_err kbeyond_attr_set_coherence(t_kbeyond* x, void* attr, long argc, t_atom* argv) {
     return kbeyond_attr_set_double(x, attr, argc, argv, &x->coherence, 0.0, 1.0, &t_kbeyond::update_quantum_walk);
 }
@@ -632,6 +790,19 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         double earlyR = 0.0;
         x->render_early(predOutL, predOutR, widthNorm, earlyAmt, earlyL, earlyR);
 
+        double qTarget = x->laserExcite * clampd(x->laser, 0.0, 1.0);
+        if (x->qswitchWindowSamples > 0 && x->laserDiffusion > 0.0) {
+            double env = x->qswitchEnv;
+            double coef = (qTarget > env) ? x->qswitchAttack : x->qswitchRelease;
+            env = lerp(qTarget, env, coef);
+            x->qswitchEnv = env;
+            if (env > 0.01)
+                x->qswitchCounter = x->qswitchWindowSamples;
+        } else {
+            x->qswitchCounter = 0;
+            x->qswitchEnv = 0.0;
+        }
+
         std::array<double, t_kbeyond::N> vec {};
         for (int l = 0; l < t_kbeyond::N; ++l) {
             double mod = 0.0;
@@ -651,6 +822,21 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         }
 
         x->apply_diffusion(vec, x->fdn_fb);
+        double qMix = 0.0;
+        if (x->qswitchCounter > 0 && x->laserDiffusion > 0.0) {
+            double norm = (double)x->qswitchCounter / (double)std::max<long>(1, x->qswitchWindowSamples);
+            double envelope = std::sin(0.5 * M_PI * norm);
+            qMix = envelope * x->laserDiffusion * clampd(x->qswitchEnv * 1.2, 0.0, 1.0);
+            if (qMix < 1.0e-6)
+                qMix = 0.0;
+            --x->qswitchCounter;
+        }
+        if (qMix > 0.0) {
+            std::array<double, t_kbeyond::N> alt {};
+            apply_walsh_hadamard16(vec, alt);
+            for (int l = 0; l < t_kbeyond::N; ++l)
+                x->fdn_fb[l] = lerp(x->fdn_fb[l], alt[l], qMix);
+        }
         x->apply_quantum_walk(x->fdn_fb);
 
         double tailL = 0.0;
@@ -748,6 +934,26 @@ extern "C" C74_EXPORT void ext_main(void *r) {
     CLASS_ATTR_DOUBLE(c, "phiweight", 0, t_kbeyond, phiweight);
     CLASS_ATTR_ACCESSORS(c, "phiweight", NULL, kbeyond_attr_set_phiweight);
     CLASS_ATTR_FILTER_CLIP(c, "phiweight", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "laser", 0, t_kbeyond, laser);
+    CLASS_ATTR_ACCESSORS(c, "laser", NULL, kbeyond_attr_set_laser);
+    CLASS_ATTR_FILTER_CLIP(c, "laser", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "laserfocus", 0, t_kbeyond, laserFocus);
+    CLASS_ATTR_ACCESSORS(c, "laserfocus", NULL, kbeyond_attr_set_laserfocus);
+    CLASS_ATTR_FILTER_CLIP(c, "laserfocus", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "lasergate", 0, t_kbeyond, laserGate);
+    CLASS_ATTR_ACCESSORS(c, "lasergate", NULL, kbeyond_attr_set_lasergate);
+    CLASS_ATTR_FILTER_CLIP(c, "lasergate", 0.0, 1.0);
+
+    CLASS_ATTR_DOUBLE(c, "laserwindow", 0, t_kbeyond, laserWindow);
+    CLASS_ATTR_ACCESSORS(c, "laserwindow", NULL, kbeyond_attr_set_laserwindow);
+    CLASS_ATTR_FILTER_CLIP(c, "laserwindow", 0.2, 0.6);
+
+    CLASS_ATTR_DOUBLE(c, "laserdiffusion", 0, t_kbeyond, laserDiffusion);
+    CLASS_ATTR_ACCESSORS(c, "laserdiffusion", NULL, kbeyond_attr_set_laserdiffusion);
+    CLASS_ATTR_FILTER_CLIP(c, "laserdiffusion", 0.0, 1.0);
 
     CLASS_ATTR_DOUBLE(c, "coherence", 0, t_kbeyond, coherence);
     CLASS_ATTR_ACCESSORS(c, "coherence", NULL, kbeyond_attr_set_coherence);
