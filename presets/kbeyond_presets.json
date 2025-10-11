@@ -21,7 +21,8 @@
         "damphf": 0.6,
         "modrate": 0.18,
         "moddepth": 6.0,
-        "phiweight": 0.8
+        "phiweight": 0.8,
+        "mode_mix": "householder"
       }
     },
     {
@@ -43,7 +44,8 @@
         "damphf": 0.6,
         "modrate": 0.35,
         "moddepth": 4.0,
-        "phiweight": 0.6
+        "phiweight": 0.6,
+        "mode_mix": "wht"
       }
     },
     {
@@ -65,7 +67,8 @@
         "damphf": 0.6,
         "modrate": 0.22,
         "moddepth": 2.5,
-        "phiweight": 0.5
+        "phiweight": 0.5,
+        "mode_mix": "hybrid"
       }
     }
   ]
