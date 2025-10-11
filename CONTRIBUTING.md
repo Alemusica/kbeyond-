@@ -7,8 +7,8 @@ Grazie per contribuire a **kbeyond~**. Obiettivo: qualità “flagship” con co
 - Riferimento: `docs/ROADMAP.md` (Definition of Done per ogni fase).
 
 ## PR: dimensione & stile
-- **Commit piccoli** (≤ 200 LOC) con messaggi chiari (“cosa/perché”).
-- **Nessun refactor massivo** dentro PR di feature.
+- **Commit perfetti** con messaggi chiari (“cosa/perché”).
+- **Nessun refactor massivo se non necessario** dentro PR di feature.
 - Usa i **template issue/PR** in `.github/ISSUE_TEMPLATE/` e `PULL_REQUEST_TEMPLATE.md`.
 - Collega sempre un’issue: `Closes #<n>`.
 
