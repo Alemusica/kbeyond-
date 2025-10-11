@@ -31,6 +31,7 @@ export MAX_SDK_ROOT=/percorso/al/max-sdk
 cmake -S . -B build/Release -DCMAKE_BUILD_TYPE=Release
 cmake --build build/Release --config Release
 ```
+Se `cmake` termina immediatamente con un errore che menziona `ext.h` o `z_dsp.h`, significa che il percorso fornito in `MAX_SDK_ROOT` non contiene un Max SDK valido (ad esempio la cartella `source/c74support` manca oppure è una versione incompleta). Assicurarsi di avere scaricato e scompattato il Max SDK ufficiale e riprovare.
 Gli artefatti prodotti (`kbeyond~.mxo` su macOS, `kbeyond~.mxe64` su Windows) verranno creati in `build/Release`. Copiare il file risultante nella cartella `externals/` del package Max.
 
 ## Script automatizzati
