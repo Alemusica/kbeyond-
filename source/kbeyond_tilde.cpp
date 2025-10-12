@@ -376,6 +376,9 @@ void t_kbeyond::apply_diffusion(const std::array<double, N> &input, std::array<d
     case MixMode::WHT:
         kbeyond::dsp::mixing::apply_walsh_hadamard16(*source, output);
         break;
+    case MixMode::WHT2D:
+        kbeyond::dsp::mixing::apply_walsh_hadamard16_2d(*source, output);
+        break;
     case MixMode::Hybrid:
         kbeyond::dsp::mixing::apply_hybrid_diffusion(u, *source, output, diffusionScratch);
         break;
@@ -721,6 +724,7 @@ t_max_err kbeyond_attr_set_mode_mix(t_kbeyond* x, void* attr, long argc, t_atom*
 
     t_symbol* symHouse = gensym("householder");
     t_symbol* symWht = gensym("wht");
+    t_symbol* symWht2D = gensym("wht2d");
     t_symbol* symHybrid = gensym("hybrid");
 
     t_kbeyond::MixMode newMode = t_kbeyond::MixMode::Householder;
@@ -728,6 +732,8 @@ t_max_err kbeyond_attr_set_mode_mix(t_kbeyond* x, void* attr, long argc, t_atom*
         newMode = t_kbeyond::MixMode::Householder;
     } else if (sym == symWht) {
         newMode = t_kbeyond::MixMode::WHT;
+    } else if (sym == symWht2D) {
+        newMode = t_kbeyond::MixMode::WHT2D;
     } else if (sym == symHybrid) {
         newMode = t_kbeyond::MixMode::Hybrid;
     } else {
@@ -1140,7 +1146,7 @@ extern "C" C74_EXPORT void ext_main(void *r) {
 
     CLASS_ATTR_SYM(c, "mode_mix", 0, t_kbeyond, modeMixSym);
     CLASS_ATTR_ACCESSORS(c, "mode_mix", kbeyond_attr_get_mode_mix, kbeyond_attr_set_mode_mix);
-    CLASS_ATTR_ENUM(c, "mode_mix", 0, "householder wht hybrid");
+    CLASS_ATTR_ENUM(c, "mode_mix", 0, "householder wht wht2d hybrid");
     CLASS_ATTR_LABEL(c, "mode_mix", 0, "Diffusion Mode");
 
     class_dspinit(c);

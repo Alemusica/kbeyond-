@@ -182,6 +182,7 @@ bool test_mix_modes() {
 
     std::array<double, t_kbeyond::N> outHouse{};
     std::array<double, t_kbeyond::N> outWht{};
+    std::array<double, t_kbeyond::N> outWht2d{};
     std::array<double, t_kbeyond::N> outHybrid{};
 
     x.mixMode = t_kbeyond::MixMode::Householder;
@@ -192,12 +193,17 @@ bool test_mix_modes() {
     x.update_diffusion();
     x.apply_diffusion(input, outWht);
 
+    x.mixMode = t_kbeyond::MixMode::WHT2D;
+    x.update_diffusion();
+    x.apply_diffusion(input, outWht2d);
+
     x.mixMode = t_kbeyond::MixMode::Hybrid;
     x.update_diffusion();
     x.apply_diffusion(input, outHybrid);
 
     double eHouse = energy(outHouse);
     double eWht = energy(outWht);
+    double eWht2d = energy(outWht2d);
     double eHybrid = energy(outHybrid);
 
     const double tol = 1.0e-9;
@@ -209,32 +215,47 @@ bool test_mix_modes() {
         std::cerr << "WHT energy mismatch: " << eWht << std::endl;
         return false;
     }
+    if (std::abs(eWht2d - 1.0) > tol) {
+        std::cerr << "WHT2D energy mismatch: " << eWht2d << std::endl;
+        return false;
+    }
     if (std::abs(eHybrid - 1.0) > tol) {
         std::cerr << "Hybrid energy mismatch: " << eHybrid << std::endl;
         return false;
     }
 
-    double diffHW = 0.0;
-    for (std::size_t i = 0; i < outHouse.size(); ++i)
-        diffHW += std::abs(outHouse[i] - outWht[i]);
-    if (diffHW < 1.0e-3) {
+    auto accum_diff = [](const std::array<double, t_kbeyond::N> &a,
+                         const std::array<double, t_kbeyond::N> &b) {
+        double sum = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i)
+            sum += std::abs(a[i] - b[i]);
+        return sum;
+    };
+
+    if (accum_diff(outHouse, outWht) < 1.0e-3) {
         std::cerr << "WHT and Householder responses are unexpectedly similar" << std::endl;
         return false;
     }
-
-    double diffHouseHybrid = 0.0;
-    double diffWhtHybrid = 0.0;
-    for (std::size_t i = 0; i < outHybrid.size(); ++i) {
-        diffHouseHybrid += std::abs(outHouse[i] - outHybrid[i]);
-        diffWhtHybrid += std::abs(outWht[i] - outHybrid[i]);
+    if (accum_diff(outHouse, outWht2d) < 1.0e-3) {
+        std::cerr << "WHT2D and Householder responses are unexpectedly similar" << std::endl;
+        return false;
     }
-    if (diffHouseHybrid < 1.0e-3 || diffWhtHybrid < 1.0e-3) {
+    if (accum_diff(outWht, outWht2d) < 1.0e-3) {
+        std::cerr << "WHT and WHT2D responses converged" << std::endl;
+        return false;
+    }
+
+    double diffHouseHybrid = accum_diff(outHouse, outHybrid);
+    double diffWhtHybrid = accum_diff(outWht, outHybrid);
+    double diffWht2dHybrid = accum_diff(outWht2d, outHybrid);
+    if (diffHouseHybrid < 1.0e-3 || diffWhtHybrid < 1.0e-3 || diffWht2dHybrid < 1.0e-3) {
         std::cerr << "Hybrid response too close to pure modes" << std::endl;
         return false;
     }
 
     return true;
 }
+
 
 bool test_quantum_dither_energy() {
     t_kbeyond x{};

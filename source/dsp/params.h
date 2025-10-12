@@ -13,7 +13,7 @@ constexpr std::size_t kEarlyTaps = 12;
 constexpr std::size_t kLaserGroups = 3;
 constexpr std::size_t kLaserTaps = 24;
 
-enum class MixMode { Householder = 0, WHT, Hybrid };
+enum class MixMode { Householder = 0, WHT, WHT2D, Hybrid };
 
 struct AttributeDefaults {
     static constexpr double regen = 0.7;
