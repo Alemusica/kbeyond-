@@ -8,6 +8,7 @@
 #include <numeric>
 #include <utility>
 #include <vector>
+#include <limits>
 
 using kbeyond::dsp::clampd;
 
@@ -275,6 +276,85 @@ bool test_quantum_dither_energy() {
             std::cerr << "Quantum dither energy drift at iteration " << n << std::endl;
             return false;
         }
+    }
+
+    return true;
+}
+
+bool test_quantum_walk_tail_energy_lock() {
+    constexpr long blockSize = 128;
+    constexpr int totalBlocks = 360;
+    constexpr int settleBlocks = 120;
+    constexpr double inputAmp = 2.5e-3;
+
+    t_kbeyond inst{};
+    inst.setup_sr(48000.0);
+    inst.mix = 1.0;
+    inst.early = 0.0;
+    inst.focus = 0.5;
+    inst.predelay = 0.0;
+    inst.setup_predelay();
+    inst.decay = 5.5;
+    inst.update_decay();
+    inst.coherence = 0.95;
+    inst.uwalkRate = 0.6;
+    inst.update_quantum_walk();
+    inst.update_modulators();
+
+    std::array<double, blockSize> inL{};
+    std::array<double, blockSize> inR{};
+    std::array<double, blockSize> outL{};
+    std::array<double, blockSize> outR{};
+    double *ins[2] = {inL.data(), inR.data()};
+    double *outs[2] = {outL.data(), outR.data()};
+
+    double energySum = 0.0;
+    double minEnergy = std::numeric_limits<double>::max();
+    double maxEnergy = 0.0;
+    int countedBlocks = 0;
+
+    for (int block = 0; block < totalBlocks; ++block) {
+        std::fill(inL.begin(), inL.end(), inputAmp);
+        std::fill(inR.begin(), inR.end(), inputAmp);
+        kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+
+        double blockEnergy = 0.0;
+        for (long n = 0; n < blockSize; ++n) {
+            double l = outL[static_cast<std::size_t>(n)];
+            double r = outR[static_cast<std::size_t>(n)];
+            blockEnergy += l * l + r * r;
+        }
+
+        if (block >= settleBlocks) {
+            energySum += blockEnergy;
+            minEnergy = std::min(minEnergy, blockEnergy);
+            maxEnergy = std::max(maxEnergy, blockEnergy);
+            ++countedBlocks;
+        }
+    }
+
+    if (countedBlocks <= 0) {
+        std::cerr << "Quantum walk energy test did not accumulate any settled blocks" << std::endl;
+        return false;
+    }
+
+    const double meanEnergy = energySum / static_cast<double>(countedBlocks);
+    if (meanEnergy < 1.0e-10) {
+        std::cerr << "Quantum walk mean energy too low: " << meanEnergy << std::endl;
+        return false;
+    }
+
+    const double deviation = std::max(std::abs(maxEnergy - meanEnergy), std::abs(meanEnergy - minEnergy)) /
+                             std::max(meanEnergy, 1.0e-12);
+    if (deviation > 0.06) {
+        std::cerr << "Quantum walk tail energy drift exceeded tolerance: deviation=" << deviation
+                  << " min=" << minEnergy << " max=" << maxEnergy << " mean=" << meanEnergy << std::endl;
+        return false;
+    }
+
+    if (!(inst.wetMakeup > 0.4 && inst.wetMakeup < 1.6)) {
+        std::cerr << "Wet makeup out of bounds under high coherence drive: " << inst.wetMakeup << std::endl;
+        return false;
     }
 
     return true;
@@ -946,6 +1026,8 @@ int main() {
         return 2;
     if (!test_quantum_dither_energy())
         return 3;
+    if (!test_quantum_walk_tail_energy_lock())
+        return 12;
     if (!test_prime_mode_spacing())
         return 4;
     if (!test_decay_regen_response())

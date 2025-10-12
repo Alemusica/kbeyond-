@@ -119,37 +119,73 @@ void apply_quantum_walk(ModState &state, std::array<double, kFdnSize> &feedback,
     if (coherenceAmt <= 0.0)
         return;
 
-    std::array<double, kFdnSize> neighborMix{};
-    const double stateMix = lerp(0.08, 0.25, coherenceAmt);
+    auto rotate_pair = [](std::array<double, kFdnSize> &vec, int idx, int jdx, double angle) {
+        if (idx == jdx)
+            return;
+        const double c = std::cos(angle);
+        const double s = std::sin(angle);
+        const std::size_t i = static_cast<std::size_t>(idx);
+        const std::size_t j = static_cast<std::size_t>(jdx);
+        const double a = vec[i];
+        const double b = vec[j];
+        vec[i] = c * a - s * b;
+        vec[j] = s * a + c * b;
+    };
+
+    std::array<double, kFdnSize> rotated = feedback;
+
+    const double baseAngleScale = lerp(0.0, 0.35, coherenceAmt * coherenceAmt);
+    const double crossAngleScale = baseAngleScale * 0.6;
+
+    std::array<double, kFdnSize> primaryAngles{};
+    std::array<double, kFdnSize> secondaryAngles{};
     for (int i = 0; i < static_cast<int>(kFdnSize); ++i) {
         const double phase = state.uwalkPhase[static_cast<std::size_t>(i)];
-        const double sinA = std::sin(phase);
-        const double sinB = std::sin(phase * 1.7320508075688772 + static_cast<double>(i) * 0.4115);
-        const double blend = 0.5 * (sinA + sinB);
-        const int a = (i + 1) % static_cast<int>(kFdnSize);
-        const int b = (i + 5) % static_cast<int>(kFdnSize);
-        const double neighbor = lerp(feedback[static_cast<std::size_t>(a)],
-                                     feedback[static_cast<std::size_t>(b)],
-                                     0.5 * (blend + 1.0));
-        neighborMix[static_cast<std::size_t>(i)] =
-            lerp(feedback[static_cast<std::size_t>(i)], neighbor, coherenceAmt);
-
-        const double drift = neighborMix[static_cast<std::size_t>(i)] * (0.6 * sinA + 0.4 * sinB);
-        state.uwalkState[static_cast<std::size_t>(i)] =
-            lerp(state.uwalkState[static_cast<std::size_t>(i)], drift, stateMix);
-
-        state.uwalkPhase[static_cast<std::size_t>(i)] += state.uwalkPhaseInc[static_cast<std::size_t>(i)];
-        if (state.uwalkPhase[static_cast<std::size_t>(i)] > kTwoPi)
-            state.uwalkPhase[static_cast<std::size_t>(i)] -= kTwoPi;
+        primaryAngles[static_cast<std::size_t>(i)] = baseAngleScale * std::sin(phase);
+        secondaryAngles[static_cast<std::size_t>(i)] =
+            crossAngleScale * std::sin(phase * 1.7320508075688772 + static_cast<double>(i) * 0.4115);
+        state.uwalkPhase[static_cast<std::size_t>(i)] =
+            wrap_phase(phase + state.uwalkPhaseInc[static_cast<std::size_t>(i)]);
     }
+
+    for (int start = 0; start < 2; ++start) {
+        for (int i = start; i < static_cast<int>(kFdnSize); i += 2) {
+            const int neighbor = (i + 1) % static_cast<int>(kFdnSize);
+            rotate_pair(rotated, i, neighbor, primaryAngles[static_cast<std::size_t>(i)]);
+        }
+    }
+
+    for (int offset = 0; offset < 4; ++offset) {
+        for (int i = offset; i < static_cast<int>(kFdnSize); i += 4) {
+            const int neighbor = (i + 5) % static_cast<int>(kFdnSize);
+            rotate_pair(rotated, i, neighbor, secondaryAngles[static_cast<std::size_t>(i)]);
+        }
+    }
+
+    const double stateMix = lerp(0.04, 0.16, coherenceAmt);
+    const double modulationScale = lerp(0.0, 0.18, coherenceAmt);
+
+    std::array<double, kFdnSize> crossCache{};
+    double crossMean = 0.0;
+    for (int i = 0; i < static_cast<int>(kFdnSize); ++i) {
+        const int partner = (i + 9) % static_cast<int>(kFdnSize);
+        const double crossEnergy = rotated[static_cast<std::size_t>(i)] * rotated[static_cast<std::size_t>(partner)];
+        crossCache[static_cast<std::size_t>(i)] = crossEnergy;
+        crossMean += crossEnergy;
+    }
+    crossMean /= static_cast<double>(kFdnSize);
 
     for (int i = 0; i < static_cast<int>(kFdnSize); ++i) {
-        const double modulation = state.uwalkState[static_cast<std::size_t>(i)] * 0.2;
-        feedback[static_cast<std::size_t>(i)] =
-            lerp(feedback[static_cast<std::size_t>(i)],
-                 neighborMix[static_cast<std::size_t>(i)] + modulation,
-                 coherenceAmt);
+        const int partner = (i + 9) % static_cast<int>(kFdnSize);
+        const double centered = crossCache[static_cast<std::size_t>(i)] - crossMean;
+        const double target = clampd(centered * 1.35, -1.0, 1.0);
+        double &stateValue = state.uwalkState[static_cast<std::size_t>(i)];
+        stateValue = lerp(stateValue, target, stateMix);
+        const double modAngle = modulationScale * stateValue;
+        rotate_pair(rotated, i, partner, modAngle);
     }
+
+    feedback = rotated;
 }
 
 } // namespace kbeyond::dsp
