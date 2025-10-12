@@ -14,6 +14,7 @@ using kbeyond::dsp::clampd;
 namespace motion_tests {
 bool run_motion_width_response();
 bool run_motion_moddepth_response();
+bool run_mid_side_mix_normalization();
 }
 
 namespace {
@@ -816,5 +817,7 @@ int main() {
         return 9;
     if (!motion_tests::run_motion_moddepth_response())
         return 10;
+    if (!motion_tests::run_mid_side_mix_normalization())
+        return 11;
     return 0;
 }

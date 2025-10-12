@@ -148,5 +148,40 @@ bool run_motion_moddepth_response() {
     return true;
 }
 
+bool run_mid_side_mix_normalization() {
+    t_kbeyond x{};
+
+    const double tailMid = 1.0;
+    const double tailSide = 0.05;
+    const double width = 1.0;
+
+    double outL = 0.0;
+    double outR = 0.0;
+    x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
+
+    auto rms = [](double a, double b) {
+        return std::sqrt(0.5 * (a * a + b * b));
+    };
+
+    const double norm = std::sqrt(tailMid * tailMid + (width * tailSide) * (width * tailSide));
+    const double invNorm = norm > 0.0 ? 1.0 / norm : 1.0;
+    const double expectedL = (tailMid + width * tailSide) * invNorm;
+    const double expectedR = (tailMid - width * tailSide) * invNorm;
+
+    const double actualRms = rms(outL, outR);
+    const double expectedRms = rms(expectedL, expectedR);
+
+    constexpr double eps = 1.0e-12;
+    const double diffDb = 20.0 * std::log10((actualRms + eps) / (expectedRms + eps));
+
+    if (std::abs(diffDb) > 1.0) {
+        std::cerr << "Mid/side mix deviated from normalized energy by " << diffDb << " dB" << std::endl;
+        std::cerr << "Expected L=" << expectedL << " R=" << expectedR << " actual L=" << outL << " R=" << outR << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace motion_tests
 
