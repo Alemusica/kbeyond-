@@ -189,6 +189,7 @@ struct t_kbeyond {
     void update_decay();
     void update_quantum_walk();
     void reset_quantum_walk();
+    void reset_tail_gain_state();
     void apply_quantum_dither(std::array<double, N> &vector);
     void apply_diffusion(const std::array<double, N> &input, std::array<double, N> &output);
     void apply_quantum_walk(std::array<double, N> &feedback);

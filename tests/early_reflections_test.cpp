@@ -803,6 +803,137 @@ bool test_wet_tail_makeup_balance() {
         return false;
     }
 
+    // Regression: ensure that rebuilding the FDN (@size change) keeps the wet
+    // compensation bounded and the tail energy consistent with a fresh instance.
+    {
+        constexpr double initialSize = 0.25;
+        constexpr double targetSize = 0.8;
+        constexpr int preChangeBlocks = 2;
+        constexpr int postSettleBlocks = tailBlocks;
+
+        auto computeRms = [&](const std::array<double, blockSize> &lVec, const std::array<double, blockSize> &rVec) {
+            double energy = 0.0;
+            for (long n = 0; n < blockSize; ++n)
+                energy += lVec[n] * lVec[n] + rVec[n] * rVec[n];
+            double mean = energy / (2.0 * static_cast<double>(blockSize));
+            return std::sqrt(std::max(mean, 0.0));
+        };
+
+        t_kbeyond inst{};
+        inst.setup_sr(48000.0);
+        inst.mix = 1.0;
+        inst.early = 0.0;
+        inst.predelay = 0.0;
+        inst.setup_predelay();
+        inst.decay = 4.0;
+        inst.update_decay();
+        inst.size = initialSize;
+        inst.setup_fdn();
+        inst.setup_early();
+        inst.update_modulators();
+
+        std::array<double, blockSize> inL{};
+        std::array<double, blockSize> inR{};
+        std::array<double, blockSize> outL{};
+        std::array<double, blockSize> outR{};
+        double *ins[2] = {inL.data(), inR.data()};
+        double *outs[2] = {outL.data(), outR.data()};
+
+        for (long n = 0; n < blockSize; ++n) {
+            inL[n] = (n == 0) ? impulseAmp : 0.0;
+            inR[n] = inL[n];
+        }
+        kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+
+        for (int b = 0; b < preChangeBlocks; ++b) {
+            std::fill(inL.begin(), inL.end(), 0.0);
+            std::fill(inR.begin(), inR.end(), 0.0);
+            kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+        }
+
+        inst.size = targetSize;
+        inst.setup_fdn();
+        inst.setup_early();
+        inst.update_modulators();
+        if (inst.wetMakeup > 1.001) {
+            std::cerr << "Wet makeup did not reset after @size rebuild: " << inst.wetMakeup << std::endl;
+            return false;
+        }
+
+        std::fill(inL.begin(), inL.end(), 0.0);
+        std::fill(inR.begin(), inR.end(), 0.0);
+        kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+
+        for (long n = 0; n < blockSize; ++n) {
+            inL[n] = (n == 0) ? impulseAmp : 0.0;
+            inR[n] = inL[n];
+        }
+        kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+
+        std::array<double, blockSize> postTailL{};
+        std::array<double, blockSize> postTailR{};
+        for (int b = 0; b < postSettleBlocks; ++b) {
+            std::fill(inL.begin(), inL.end(), 0.0);
+            std::fill(inR.begin(), inR.end(), 0.0);
+            kbeyond_perform64(&inst, nullptr, ins, 2, outs, 2, blockSize, 0, nullptr);
+            if (b == postSettleBlocks - 1) {
+                postTailL = outL;
+                postTailR = outR;
+            }
+        }
+
+        double postRms = computeRms(postTailL, postTailR);
+        if (inst.wetMakeup > 2.0) {
+            std::cerr << "Wet makeup exploded after @size change: " << inst.wetMakeup << std::endl;
+            return false;
+        }
+
+        t_kbeyond reference{};
+        reference.setup_sr(48000.0);
+        reference.mix = 1.0;
+        reference.early = 0.0;
+        reference.predelay = 0.0;
+        reference.setup_predelay();
+        reference.decay = 4.0;
+        reference.update_decay();
+        reference.size = targetSize;
+        reference.setup_fdn();
+        reference.setup_early();
+        reference.update_modulators();
+
+        std::array<double, blockSize> refInL{};
+        std::array<double, blockSize> refInR{};
+        std::array<double, blockSize> refOutL{};
+        std::array<double, blockSize> refOutR{};
+        double *refIns[2] = {refInL.data(), refInR.data()};
+        double *refOuts[2] = {refOutL.data(), refOutR.data()};
+
+        for (long n = 0; n < blockSize; ++n) {
+            refInL[n] = (n == 0) ? impulseAmp : 0.0;
+            refInR[n] = refInL[n];
+        }
+        kbeyond_perform64(&reference, nullptr, refIns, 2, refOuts, 2, blockSize, 0, nullptr);
+
+        std::array<double, blockSize> refTailL{};
+        std::array<double, blockSize> refTailR{};
+        for (int b = 0; b < postSettleBlocks; ++b) {
+            std::fill(refInL.begin(), refInL.end(), 0.0);
+            std::fill(refInR.begin(), refInR.end(), 0.0);
+            kbeyond_perform64(&reference, nullptr, refIns, 2, refOuts, 2, blockSize, 0, nullptr);
+            if (b == postSettleBlocks - 1) {
+                refTailL = refOutL;
+                refTailR = refOutR;
+            }
+        }
+
+        double refRms = computeRms(refTailL, refTailR);
+        double rebuildDiffDb = 20.0 * std::log10((postRms + eps) / (refRms + eps));
+        if (std::abs(rebuildDiffDb) > 1.0) {
+            std::cerr << "Post-rebuild wet RMS diverged by " << rebuildDiffDb << " dB" << std::endl;
+            return false;
+        }
+    }
+
     return true;
 }
 
