@@ -22,7 +22,7 @@
 **A — Hardening (`a-hardening`)**
 1. Early energy-balanced (tap specchiati, pan equal-power, width in M/S ortonormale). Test impulso mono → |L−R| < 0.1 dB.
 2. RT60 vero `@decay`: per-linea `g_i = 10^(−3·d_i/@decay)`; damping LF/MF/HF (1-pole).
-3. Vitalità low-CPU: 2–4 allpass con jitter lento + micro-jitter su pochi tap.
+3. Vitalità high-CPU
 
 **B — Potenza (`b-power`)**
 4. **Matrix Engine v2** (scalabile 16/32/**64**):  
