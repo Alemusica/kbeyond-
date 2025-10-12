@@ -45,6 +45,8 @@ Copy code
 **A2. RT60 reale + Material (3 bande)** — `@decay (s)` con `g_i = 10^(−3·d_i/@decay)` (prima del mixing) + 1-pole LF/MF/HF.  
 **A3. Vitalità low-CPU** — 2–4 allpass diffusori con jitter lento + micro-jitter su pochi tap.  
 **Nota semplificazione** — **Laser OFF** (temporaneo, no-op sugli attributi).
+  - **Stato branch `a-hardening/no-laser-2d`**: disattivazione temporanea completata e in merge-review.
+  - **Prossimo passo**: aggiornare le voci **A1/A2** con lo stato corrente (tap/pan bilanciati + RT60 reale) e consolidare la documentazione QA.
 
 **DoD A** — Balance OK; RT60 ≤ ±5%/banda; densità 50–500 ms↑; no ringing; CPU nel budget HQ.
 

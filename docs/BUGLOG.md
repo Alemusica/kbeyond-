@@ -17,10 +17,10 @@
 
 ---
 
-## Esempio (sostituisci con dati reali)
-- **Sintomi**: fallimento test “Dynamic damping dropped below baseline” durante motion.
-- **Root cause**: i valori dinamici MF/HF potevano scendere sotto i baseline calcolati in `decayState`.
-- **Soluzione**: clamp dei valori dinamici a `max(dynamics, baseline)`; predelay minimo a 1 sample; base M/S ortonormale con vettore `side` dedicato all’iniezione.
-- **File toccati**: `source/kbeyond_tilde.cpp`, `source/dsp/fdn.cpp`, `tests/...`
-- **Commit**: `<sha8>` (branch `a-hardening/no-laser-2d`) — PR #<n>
-- **Verifica**: side-impulse width-mod test verde; motion settling esteso; nessuna regressione CPU.
+## [2024-05-24] #N/A — Dynamic damping dropped below baseline
+- **Sintomi**: i test QA registravano il fallimento “Dynamic damping dropped below baseline” durante cicli di motion con width modulata.
+- **Root cause**: mancavano i clamp per MF/HF damping dinamici, permettendo ai valori calcolati di scendere sotto il baseline derivato da `decayState`.
+- **Soluzione**: introdotta macro di disattivazione laser + clamp `max(dynamics, baseline)` su MF/HF; predelay forzato ≥1 sample per stabilizzare il detector.
+- **File toccati**: `source/kbeyond_tilde.cpp`, `source/dsp/fdn.cpp`, `tests/qa_side_impulse_width.cpp`, `tests/qa_motion_settling.cpp`, `docs/QA.md`, `docs/ROADMAP.md`.
+- **Commit**: pending (branch `a-hardening/no-laser-2d`) — PR #TBD.
+- **Verifica**: suite QA con test `qa_side_impulse_width` e `qa_motion_settling` verde; regressione CPU negativa.
