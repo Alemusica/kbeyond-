@@ -151,33 +151,55 @@ bool run_motion_moddepth_response() {
 bool run_mid_side_mix_normalization() {
     t_kbeyond x{};
 
-    const double tailMid = 1.0;
-    const double tailSide = 0.05;
-    const double width = 1.0;
-
-    double outL = 0.0;
-    double outR = 0.0;
-    x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
-
-    auto rms = [](double a, double b) {
-        return std::sqrt(0.5 * (a * a + b * b));
-    };
-
-    const double norm = std::sqrt(tailMid * tailMid + (width * tailSide) * (width * tailSide));
-    const double invNorm = norm > 0.0 ? 1.0 / norm : 1.0;
-    const double expectedL = (tailMid + width * tailSide) * invNorm;
-    const double expectedR = (tailMid - width * tailSide) * invNorm;
-
-    const double actualRms = rms(outL, outR);
-    const double expectedRms = rms(expectedL, expectedR);
-
+    constexpr double width = 1.0;
+    constexpr double invSqrt2 = 1.0 / std::sqrt(2.0);
     constexpr double eps = 1.0e-12;
-    const double diffDb = 20.0 * std::log10((actualRms + eps) / (expectedRms + eps));
 
-    if (std::abs(diffDb) > 1.0) {
-        std::cerr << "Mid/side mix deviated from normalized energy by " << diffDb << " dB" << std::endl;
-        std::cerr << "Expected L=" << expectedL << " R=" << expectedR << " actual L=" << outL << " R=" << outR << std::endl;
-        return false;
+    {
+        const double tailMid = 1.0;
+        const double tailSide = 0.05;
+
+        double outL = 0.0;
+        double outR = 0.0;
+        x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
+
+        const double expectedL = (tailMid + width * tailSide) * invSqrt2;
+        const double expectedR = (tailMid - width * tailSide) * invSqrt2;
+
+        const double errL = std::abs(outL - expectedL);
+        const double errR = std::abs(outR - expectedR);
+        if (errL > 1.0e-9 || errR > 1.0e-9) {
+            std::cerr << "Mid/side mix deviated from orthonormal expectation: L err=" << errL
+                      << " R err=" << errR << std::endl;
+            return false;
+        }
+    }
+
+    {
+        const double tailMid = 1.0e-3;
+        const double tailSide = 1.0;
+
+        double outL = 0.0;
+        double outR = 0.0;
+        x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
+
+        const double inputEnergy = tailMid * tailMid + tailSide * tailSide;
+        const double outputEnergy = outL * outL + outR * outR;
+        const double energyDiffDb = 10.0 * std::log10((outputEnergy + eps) / (inputEnergy + eps));
+        if (std::abs(energyDiffDb) > 1.0e-6) {
+            std::cerr << "Mid/side mix lost energy under leak compensation by " << energyDiffDb
+                      << " dB" << std::endl;
+            return false;
+        }
+
+        const double rmsExpected = std::sqrt(0.5 * inputEnergy);
+        const double rmsActual = std::sqrt(0.5 * outputEnergy);
+        const double rmsDiffDb = 20.0 * std::log10((rmsActual + eps) / (rmsExpected + eps));
+        if (std::abs(rmsDiffDb) > 1.0e-6) {
+            std::cerr << "Mid/side mix RMS deviated from orthonormal target by " << rmsDiffDb
+                      << " dB" << std::endl;
+            return false;
+        }
     }
 
     return true;
