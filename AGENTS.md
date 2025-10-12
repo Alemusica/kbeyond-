@@ -141,5 +141,3 @@ Split meccanico in moduli (`params.h`, `buffers.h`, `filters.*`, `early.*`, `fdn
 ```
 
 ---
-
-
