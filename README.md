@@ -60,7 +60,7 @@ Il bundle è scritto in `build/macos/kbeyond~.mxo/Contents/MacOS/kbeyond~`.
 ## Documentazione
 - `help/kbeyond~.maxhelp` mostra una catena minima `noise~ -> kbeyond~ -> ezdac~` con controllo degli attributi `@mix`, `@width` e `@mode_mix`.
 - `presets/kbeyond_presets.json` include esempi aggiornati: oltre ai classici Hall/Plate/Room è presente "Laser Sweep" per esplorare il cluster laser.
-- `docs/roadmap_it.md` descrive le fasi di evoluzione previste, con criteri di accettazione per ciascuna milestone.
+- `docs/ROADMAP.md` descrive le fasi di evoluzione previste, con criteri di accettazione per ciascuna milestone.
 
 ### Attributi Laser
 - `@laser`: mix principale del cluster (0–1). 
