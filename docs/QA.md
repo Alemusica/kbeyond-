@@ -31,8 +31,8 @@
   Con motion attivo, i valori dinamici MF/HF **non scendono mai** sotto `decayState` (baseline).  
   _Motivo: aveva causato il fail “Dynamic damping dropped below baseline” in QA._ :contentReference[oaicite:2]{index=2}
 
-- **Side-impulse width-modulation**  
-  Impulso **puro side** (L=+1, R=−1), width modulata lentamente in [0..2].  
+- **Side-impulse width-modulation**
+  Impulso **puro side** (L=+1, R=−1), width modulata lentamente in [0..2] (`test_side_impulse_width_balance`).
   **Energia L/R bilanciata** entro **±3%** sull’intera finestra (base M/S ortonormale + side-injection dedicata).
 
 - **Motion/width (settling)**

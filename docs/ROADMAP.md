@@ -8,7 +8,7 @@
 
 - **Fase F – Factorization:** completata; i moduli DSP sono separati (`buffers`, `filters`, `early`, `fdn`, `decay`, `mixing`, `detector`, `mod`, `prime_modes`) e mantengono il bit-match richiesto.
 - **Fase A – Hardening:**
-  - ✅ **A1** (base M/S ortonormale, width rinormalizzato) — confermata dai test `side_impulse_width_balance` e `run_side_width_energy_test`.
+  - ✅ **A1** (base M/S ortonormale, side-injection dedicata, width rinormalizzato) — confermata dai test `side_impulse_width_balance` e `run_side_width_energy_test`.
   - ✅ **A2** (RT60 reale + damping LF/MF/HF con clamp dinamico) — `update_decay` attivo, QA “Dynamic damping ≥ baseline” chiuso.
   - ⏳ **A3** (vitalità low-CPU) — micro/all-pass jitter ancora da progettare.
 - **Fase B e successive:** non avviate; restano pianificate secondo la matrice 2D/WHT e il detector range–doppler di roadmap.
@@ -56,7 +56,7 @@ Copy code
 **A1. Early bilanciata** — tap ER specchiati L/R; pan equal-power; `width` in **M/S ortonormale**. Test: |L−R| < 0,1 dB.  
 **A2. RT60 reale + Material (3 bande)** — `@decay (s)` con `g_i = 10^(−3·d_i/@decay)` (prima del mixing) + 1-pole LF/MF/HF.  
 **A3. Vitalità low-CPU** — 2–4 allpass diffusori con jitter lento + micro-jitter su pochi tap.  
-**Nota semplificazione** — **Laser OFF** (temporaneo, no-op sugli attributi).
+**Nota semplificazione** — **Laser OFF** (temporaneo, no-op sugli attributi tramite `#if KBEYOND_ENABLE_LASER`).
 
 **DoD A** — Balance OK; RT60 ≤ ±5%/banda; densità 50–500 ms↑; no ringing; CPU nel budget HQ.
 

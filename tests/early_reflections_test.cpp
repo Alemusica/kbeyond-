@@ -505,7 +505,10 @@ DecayResponse measure_decay_response(double regenValue, double decayValue) {
 
         double earlyL = 0.0;
         double earlyR = 0.0;
-        double clusterAmt = clampd(x.laser, 0.0, 1.0);
+        double clusterAmt = 0.0;
+#if KBEYOND_ENABLE_LASER
+        clusterAmt = clampd(x.laser, 0.0, 1.0);
+#endif
         x.earlySection.render(predOutL,
                               predOutR,
                               widthNorm,
@@ -611,7 +614,7 @@ bool test_side_impulse_width_balance() {
     constexpr int totalFrames = impulseFrames + tailFrames;
     const double widthRate = 2.0 * M_PI / static_cast<double>(impulseFrames);
     const double baseWidth = 1.0;
-    const double sweep = 0.85;
+    const double sweep = 1.0;
 
     double widthPhase = 0.0;
     double energyL = 0.0;
@@ -644,7 +647,10 @@ bool test_side_impulse_width_balance() {
 
         double earlyL = 0.0;
         double earlyR = 0.0;
-        double clusterAmt = clampd(inst.laser, 0.0, 1.0);
+        double clusterAmt = 0.0;
+#if KBEYOND_ENABLE_LASER
+        clusterAmt = clampd(inst.laser, 0.0, 1.0);
+#endif
         inst.earlySection.render(predOutL,
                                  predOutR,
                                  widthVal,
