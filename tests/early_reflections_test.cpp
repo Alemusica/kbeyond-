@@ -14,6 +14,7 @@ using kbeyond::dsp::clampd;
 namespace motion_tests {
 bool run_motion_width_response();
 bool run_motion_moddepth_response();
+bool run_mid_side_mix_normalization();
 }
 
 namespace {
@@ -733,7 +734,7 @@ bool test_wet_tail_makeup_balance() {
     constexpr long blockSize = 256;
     constexpr int tailBlocks = 6;
     constexpr double impulseAmp = 1.0e-3;
-    const std::array<double, 3> mixes{0.25, 0.5, 0.75};
+    const std::array<double, 4> mixes{0.25, 0.5, 0.75, 1.0};
     std::array<double, mixes.size()> tailRms{};
 
     for (std::size_t idx = 0; idx < mixes.size(); ++idx) {
@@ -782,12 +783,24 @@ bool test_wet_tail_makeup_balance() {
     }
 
     constexpr double eps = 1.0e-12;
-    double reference = tailRms[1];
-    for (std::size_t idx = 0; idx < mixes.size(); ++idx) {
-        double ratio = (tailRms[idx] + eps) / (reference + eps);
-        double diffDb = 20.0 * std::log10(ratio);
-        std::cerr << "mix=" << mixes[idx] << " rms=" << tailRms[idx] << " diffDb=" << diffDb << std::endl;
-        // Debugging: temporarily skip failure to inspect values
+    for (std::size_t idx = 1; idx < mixes.size(); ++idx) {
+        double prev = tailRms[idx - 1];
+        double current = tailRms[idx];
+        if (current + eps < prev * 0.6) {
+            std::cerr << "Wet tail RMS collapsed between mix=" << mixes[idx - 1]
+                      << " (" << prev << ") and mix=" << mixes[idx]
+                      << " (" << current << ")" << std::endl;
+            return false;
+        }
+    }
+
+    double fullWet = tailRms.back();
+    double refWet = tailRms[mixes.size() - 2];
+    double diffDb = 20.0 * std::log10((fullWet + eps) / (refWet + eps));
+    if (diffDb < -1.0) {
+        std::cerr << "Full wet tail dropped by " << diffDb
+                  << " dB versus mix=" << mixes[mixes.size() - 2] << std::endl;
+        return false;
     }
 
     return true;
@@ -816,5 +829,7 @@ int main() {
         return 9;
     if (!motion_tests::run_motion_moddepth_response())
         return 10;
+    if (!motion_tests::run_mid_side_mix_normalization())
+        return 11;
     return 0;
 }

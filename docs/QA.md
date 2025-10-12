@@ -40,8 +40,11 @@
   Per verificare crescita/ritorno della larghezza, usa **128 blocchi** di assestamento a ciascun livello di ampiezza (range/doppler con slew).
   Coperto dalla suite QA (`qa_motion_settling`), che traccia l’overshoot residuo e assicura il rispetto delle soglie.
 
-- **Unità dei pesi di uscita**  
+- **Unità dei pesi di uscita**
   `∑wL² = ∑wR² = 1` dopo `apply_width`; tolleranza numerica ≤ 1e−9.
+
+- **Mix @100% senza collasso**
+  `test_wet_tail_makeup_balance` esegue un impulso lato wet con mix ∈ {0.25, 0.5, 0.75, 1.0} e verifica che la coda RMS a mix=1.0 non cada oltre **−1 dB** rispetto a 0.75.
 
 ---
 

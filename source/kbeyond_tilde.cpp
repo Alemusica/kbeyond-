@@ -255,24 +255,46 @@ void t_kbeyond::apply_width(double widthNorm) {
 
 void t_kbeyond::mix_mid_side_to_lr(double tailMid, double tailSide, double widthNorm, double &outL, double &outR) const {
     widthNorm = clampd(widthNorm, 0.0, 2.0);
-    double baseMid = 1.0;
-    double baseSide = widthNorm;
     constexpr double eps = 1.0e-12;
-    double ratio = std::abs(tailSide) > eps ? std::abs(tailMid) / std::abs(tailSide) : 0.0;
+
+    const double baseMid = 1.0;
+    const double baseSide = widthNorm;
+
+    const double absMid = std::abs(tailMid);
+    const double absSide = std::abs(tailSide);
+    const double ratio = absMid > eps ? absSide / absMid : (absSide > 0.0 ? 1.0e12 : 0.0);
     constexpr double leakComp = 4.0;
-    double comp = 1.0 / (1.0 + leakComp * ratio);
-    double midGain = baseMid * comp;
-    double sideGain = baseSide;
-    double norm = std::sqrt(midGain * midGain + sideGain * sideGain);
-    if (norm <= 0.0) {
+    const double comp = ratio > 1.0 ? 1.0 / (1.0 + leakComp * (ratio - 1.0)) : 1.0;
+
+    // Build an orthonormal pair of mixing vectors so |L|^2 + |R|^2 == |Mid|^2 + |Side|^2.
+    double lMid = baseMid * comp;
+    double lSide = baseSide;
+    double lNorm = std::hypot(lMid, lSide);
+    if (lNorm <= eps) {
         outL = tailMid;
         outR = tailMid;
         return;
     }
-    midGain /= norm;
-    sideGain /= norm;
-    outL = midGain * tailMid + sideGain * tailSide;
-    outR = midGain * tailMid - sideGain * tailSide;
+    lMid /= lNorm;
+    lSide /= lNorm;
+
+    double rMid = baseMid;
+    double rSide = -baseSide;
+    double dot = rMid * lMid + rSide * lSide;
+    rMid -= dot * lMid;
+    rSide -= dot * lSide;
+    double rNorm = std::hypot(rMid, rSide);
+    if (rNorm <= eps) {
+        rMid = -lSide;
+        rSide = lMid;
+    } else {
+        rMid /= rNorm;
+        rSide /= rNorm;
+    }
+
+    // The orthonormal basis ensures total energy is preserved when projecting back to L/R.
+    outL = lMid * tailMid + lSide * tailSide;
+    outR = rMid * tailMid + rSide * tailSide;
 }
 
 void t_kbeyond::update_output_weights() {
@@ -947,10 +969,8 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         x->wetMakeup = lerp(compTarget, x->wetMakeup, makeupCoef);
 
         double wetGain = wetGainBase;
-        if (mix >= 1.0) {
-            wetGain = 1.0;
-        } else if (mix > 0.0) {
-            double makeup = 1.0 + mix * (x->wetMakeup - 1.0);
+        if (mix > 0.0) {
+            double makeup = (mix >= 1.0) ? x->wetMakeup : (1.0 + mix * (x->wetMakeup - 1.0));
             wetGain *= makeup;
         }
 

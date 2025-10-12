@@ -24,3 +24,11 @@
 - **File toccati**: `source/kbeyond_tilde.cpp`, `source/dsp/fdn.cpp`, `tests/qa_side_impulse_width.cpp`, `tests/qa_motion_settling.cpp`, `docs/QA.md`, `docs/ROADMAP.md`.
 - **Commit**: pending (branch `a-hardening/no-laser-2d`) — PR #TBD.
 - **Verifica**: suite QA con test `qa_side_impulse_width` e `qa_motion_settling` verde; regressione CPU negativa.
+## [2025-10-12] #000 — Wet mix makeup @100%
+- **Sintomi**: spingendo `@mix` verso 1.0 il livello uscita crollava di parecchi dB, rendendo inascoltabile il full-wet e rompendo i preset wide.
+- **Root cause**: a `mix=1.0` il codice azzerava la compensazione (`wetMakeup`), lasciando la coda senza make-up mentre il dry veniva rimosso.
+- **Soluzione**: applicato `wetMakeup` su tutto il range (0<@mix≤1) con clamp ≤8× e QA che misura la coda RMS fino a full-wet.
+- **File toccati**: `source/kbeyond_tilde.cpp`, `tests/early_reflections_test.cpp`, `docs/QA.md`, `docs/ROADMAP.md`.
+- **Commit**: (pending, branch `a-hardening/no-laser-2d`) — PR #TBD
+- **Verifica**: `test_wet_tail_makeup_balance` (KBEYOND_BUILD_TESTS=ON, richiede `MAX_SDK_ROOT`).
+- **Note/rollback**: ripristinare il commit precedente se servisse tornare alla curva originale del mix; nessun preset da migrare.
