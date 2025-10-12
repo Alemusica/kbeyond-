@@ -17,6 +17,13 @@
 
 ---
 
+## [2024-05-24] #N/A — Dynamic damping dropped below baseline
+- **Sintomi**: i test QA registravano il fallimento “Dynamic damping dropped below baseline” durante cicli di motion con width modulata.
+- **Root cause**: mancavano i clamp per MF/HF damping dinamici, permettendo ai valori calcolati di scendere sotto il baseline derivato da `decayState`.
+- **Soluzione**: introdotta macro di disattivazione laser + clamp `max(dynamics, baseline)` su MF/HF; predelay forzato ≥1 sample per stabilizzare il detector.
+- **File toccati**: `source/kbeyond_tilde.cpp`, `source/dsp/fdn.cpp`, `tests/qa_side_impulse_width.cpp`, `tests/qa_motion_settling.cpp`, `docs/QA.md`, `docs/ROADMAP.md`.
+- **Commit**: pending (branch `a-hardening/no-laser-2d`) — PR #TBD.
+- **Verifica**: suite QA con test `qa_side_impulse_width` e `qa_motion_settling` verde; regressione CPU negativa.
 ## [2025-10-12] #000 — Wet mix makeup @100%
 - **Sintomi**: spingendo `@mix` verso 1.0 il livello uscita crollava di parecchi dB, rendendo inascoltabile il full-wet e rompendo i preset wide.
 - **Root cause**: a `mix=1.0` il codice azzerava la compensazione (`wetMakeup`), lasciando la coda senza make-up mentre il dry veniva rimosso.
