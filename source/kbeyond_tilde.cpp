@@ -258,9 +258,11 @@ void t_kbeyond::mix_mid_side_to_lr(double tailMid, double tailSide, double width
     double baseMid = 1.0;
     double baseSide = widthNorm;
     constexpr double eps = 1.0e-12;
-    double ratio = std::abs(tailSide) > eps ? std::abs(tailMid) / std::abs(tailSide) : 0.0;
+    double absMid = std::abs(tailMid);
+    double absSide = std::abs(tailSide);
+    double ratio = absMid > eps ? absSide / absMid : 0.0;
     constexpr double leakComp = 4.0;
-    double comp = 1.0 / (1.0 + leakComp * ratio);
+    double comp = ratio > 1.0 ? 1.0 / (1.0 + leakComp * (ratio - 1.0)) : 1.0;
     double midGain = baseMid * comp;
     double sideGain = baseSide;
     double norm = std::sqrt(midGain * midGain + sideGain * sideGain);
