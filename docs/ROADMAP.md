@@ -34,6 +34,7 @@ Sequenza split: `params/buffers` → `filters` → `early` → `fdn` → `mixing
 ### 3) Fase B — Potenza (CPU)
 
 * **B1. Matrix Engine v2 (16/32/64)** — WHT Full + Φ‑doping; **GoldenWave**; **2D** separabile (8×8 ⊗ 8×8); SIMD NEON/Accelerate su Apple Silicon.
+  * ✅ Modalità `wht2d` (H4 ⊗ H4) disponibile come `@mode_mix` a parità di energia.
 * **B2. Detector range–doppler** — Range (RMS lento) + Doppler (0.7–3 kHz) → mod `width/hf_damp/modDepth` con slew **per blocco** (no per‑sample).
 
 **DoD B** — Densità ≥ HH baseline; movimento senza chorus/pumping; Δlivello < 0.1 dB tra modalità.

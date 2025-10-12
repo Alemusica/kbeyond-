@@ -8,6 +8,7 @@
 * Detector **range–doppler** (RMS lento + 0.7–3 kHz) per modulare `width/damping/moddepth` con slew controllato da `@motion`.
 * Modulatori per‑linea (`@modrate`, `@moddepth`).
 * Controlli: `@regen @derez @filter @early @focus @predelay @mix @width @size @color @modrate @moddepth @motion @phiweight @mode_mix`.
+  * `@mode_mix`: `householder`, `wht`, `wht2d`, `hybrid` (WHT → Householder).
 
 > **Laser**: presente come attributi ma **disabilitato di default** (`KBEYOND_ENABLE_LASER=0`). Gli slider hanno effetto **no‑op** finché non abilitato a build‑time.
 
