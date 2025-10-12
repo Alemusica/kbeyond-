@@ -53,12 +53,16 @@ void t_kbeyond::setup_sr(double newsr) {
     rangeEnv = motionDetector.range();
     dopplerEnv = motionDetector.doppler();
     spreadEnv = motionDetector.spread();
+    reset_tail_gain_state();
+    apply_width(clampd(width, 0.0, 2.0));
+}
+
+void t_kbeyond::reset_tail_gain_state() {
     dryEnergyEnv = 0.0;
     wetEnergyEnv = 0.0;
     dryLevelEnv = 0.0;
     wetLevelEnv = 0.0;
     wetMakeup = 1.0;
-    apply_width(clampd(width, 0.0, 2.0));
 }
 
 std::vector<double> t_kbeyond::make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const {
@@ -154,6 +158,7 @@ void t_kbeyond::setup_fdn() {
     update_decay();
     reset_quantum_walk();
     update_injection_weights();
+    reset_tail_gain_state();
 }
 
 void t_kbeyond::refresh_filters() {
@@ -957,13 +962,20 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         double compTarget = 1.0;
         if (mix > 0.0) {
             constexpr double eps = 1.0e-12;
+            constexpr double wetFloor = 1.0e-10;
             constexpr double makeupMin = 1.0;
             constexpr double makeupMax = 8.0;
-            double ratio = std::sqrt((x->dryEnergyEnv + eps) / (x->wetEnergyEnv + eps));
-            // Never allow the compensation to dip below unity when the wet tail dominates.
-            ratio = std::max(ratio, 1.0);
-            // Clamp to a safe yet generous range so quiet tails are lifted without runaway gain.
-            compTarget = clampd(ratio, makeupMin, makeupMax);
+            bool wetBelowFloor = (wetEnergy <= wetFloor) || (x->wetEnergyEnv <= wetFloor);
+            if (wetBelowFloor) {
+                // Keep the target at or below unity when the wet tail is effectively silent.
+                compTarget = std::min(x->wetMakeup, 1.0);
+            } else {
+                double ratio = std::sqrt((x->dryEnergyEnv + eps) / (x->wetEnergyEnv + eps));
+                // Never allow the compensation to dip below unity when the wet tail dominates.
+                ratio = std::max(ratio, 1.0);
+                // Clamp to a safe yet generous range so quiet tails are lifted without runaway gain.
+                compTarget = clampd(ratio, makeupMin, makeupMax);
+            }
         }
         constexpr double makeupCoef = 0.9975;
         x->wetMakeup = lerp(compTarget, x->wetMakeup, makeupCoef);
