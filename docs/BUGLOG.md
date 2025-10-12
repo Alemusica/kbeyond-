@@ -17,6 +17,15 @@
 
 ---
 
+## [2025-10-13] #001 — Dynamic damping ≥ baseline
+- **Sintomi**: QA "Dynamic damping dropped below baseline" falliva quando il detector range/doppler riduceva l'energia wet, causando valori MF/HF < baseline.
+- **Root cause**: il calcolo dinamico di `dampMFValue/dampHFValue` non bloccava esplicitamente il minimo rispetto ai coefficienti calcolati in `update_decay`.
+- **Soluzione**: applicato clamp con `std::max` verso `decayState.dampMF/dampHF` direttamente nel perform, assicurando che l'automation dinamica non scenda mai sotto la baseline.
+- **File toccati**: `source/kbeyond_tilde.cpp`, `tests/early_reflections_test.cpp`, `docs/QA.md`, `docs/ROADMAP.md`.
+- **Commit**: (pending, branch `a-hardening/no-laser-2d`) — PR #TBD
+- **Verifica**: `motion_tests::run_motion_moddepth_response` (QA) + `test_side_impulse_width_balance` (width 0..2, energia bilanciata ±3%).
+- **Note/rollback**: per ripristinare il comportamento precedente rimuovere il clamp nel perform, ma riemerge il fail QA.
+
 ## [2025-10-12] #000 — Wet mix makeup @100%
 - **Sintomi**: spingendo `@mix` verso 1.0 il livello uscita crollava di parecchi dB, rendendo inascoltabile il full-wet e rompendo i preset wide.
 - **Root cause**: a `mix=1.0` il codice azzerava la compensazione (`wetMakeup`), lasciando la coda senza make-up mentre il dry veniva rimosso.

@@ -114,7 +114,11 @@ void t_kbeyond::render_early(double inL,
                              double focusAmt,
                              double &outL,
                              double &outR) {
+#if KBEYOND_ENABLE_LASER
     double clusterAmt = clampd(laser, 0.0, 1.0);
+#else
+    double clusterAmt = 0.0;
+#endif
     earlySection.render(inL,
                         inR,
                         clampd(widthValue, 0.0, 2.0),
