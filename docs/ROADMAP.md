@@ -4,6 +4,18 @@
 
 ---
 
+## Stato attuale (Ottobre 2025)
+
+- **Fase F – Factorization:** completata; i moduli DSP sono separati (`buffers`, `filters`, `early`, `fdn`, `decay`, `mixing`, `detector`, `mod`, `prime_modes`) e mantengono il bit-match richiesto.
+- **Fase A – Hardening:**
+  - ✅ **A1** (base M/S ortonormale, width rinormalizzato) — confermata dai test `side_impulse_width_balance` e `run_side_width_energy_test`.
+  - ✅ **A2** (RT60 reale + damping LF/MF/HF con clamp dinamico) — `update_decay` attivo, QA “Dynamic damping ≥ baseline” chiuso.
+  - ⏳ **A3** (vitalità low-CPU) — micro/all-pass jitter ancora da progettare.
+- **Fase B e successive:** non avviate; restano pianificate secondo la matrice 2D/WHT e il detector range–doppler di roadmap.
+- **Qualità mix wet:** bug “coda che collassa a mix alto” risolto (vedi `docs/BUGLOG.md`), nuovo QA per garantire make-up anche a 100% wet.
+
+---
+
 ## 0) FACTORIZATION-FIRST (prima di tutto)
 
 ### 0.1 Principi

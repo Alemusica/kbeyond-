@@ -949,10 +949,8 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
         x->wetMakeup = lerp(compTarget, x->wetMakeup, makeupCoef);
 
         double wetGain = wetGainBase;
-        if (mix >= 1.0) {
-            wetGain = 1.0;
-        } else if (mix > 0.0) {
-            double makeup = 1.0 + mix * (x->wetMakeup - 1.0);
+        if (mix > 0.0) {
+            double makeup = (mix >= 1.0) ? x->wetMakeup : (1.0 + mix * (x->wetMakeup - 1.0));
             wetGain *= makeup;
         }
 

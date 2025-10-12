@@ -17,10 +17,11 @@
 
 ---
 
-## Esempio (sostituisci con dati reali)
-- **Sintomi**: fallimento test “Dynamic damping dropped below baseline” durante motion.
-- **Root cause**: i valori dinamici MF/HF potevano scendere sotto i baseline calcolati in `decayState`.
-- **Soluzione**: clamp dei valori dinamici a `max(dynamics, baseline)`; predelay minimo a 1 sample; base M/S ortonormale con vettore `side` dedicato all’iniezione.
-- **File toccati**: `source/kbeyond_tilde.cpp`, `source/dsp/fdn.cpp`, `tests/...`
-- **Commit**: `<sha8>` (branch `a-hardening/no-laser-2d`) — PR #<n>
-- **Verifica**: side-impulse width-mod test verde; motion settling esteso; nessuna regressione CPU.
+## [2025-10-12] #000 — Wet mix makeup @100%
+- **Sintomi**: spingendo `@mix` verso 1.0 il livello uscita crollava di parecchi dB, rendendo inascoltabile il full-wet e rompendo i preset wide.
+- **Root cause**: a `mix=1.0` il codice azzerava la compensazione (`wetMakeup`), lasciando la coda senza make-up mentre il dry veniva rimosso.
+- **Soluzione**: applicato `wetMakeup` su tutto il range (0<@mix≤1) con clamp ≤8× e QA che misura la coda RMS fino a full-wet.
+- **File toccati**: `source/kbeyond_tilde.cpp`, `tests/early_reflections_test.cpp`, `docs/QA.md`, `docs/ROADMAP.md`.
+- **Commit**: (pending, branch `a-hardening/no-laser-2d`) — PR #TBD
+- **Verifica**: `test_wet_tail_makeup_balance` (KBEYOND_BUILD_TESTS=ON, richiede `MAX_SDK_ROOT`).
+- **Note/rollback**: ripristinare il commit precedente se servisse tornare alla curva originale del mix; nessun preset da migrare.
