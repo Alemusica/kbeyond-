@@ -47,4 +47,3 @@ ctest --test-dir build -V
 * Mapping `@regen/@decay` con floor sui coefficienti per evitare collassi.
 
 ---
-
