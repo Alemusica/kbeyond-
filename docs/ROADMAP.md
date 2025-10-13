@@ -4,7 +4,7 @@
 
 * **Fase F – Factorization**: completata; moduli DSP separati e bit‑match confermato.
 * **Fase A – Hardening**:
-  ‑ ✅ **A1** (base M/S ortonormale, side‑injection dedicata, width rinormalizzato) — test `side_impulse_width_balance`, `run_side_width_energy_test`.
+  ‑ ✅ **A1** (base M/S ortonormale, side‑injection dedicata, width rinormalizzato) — test `side_impulse_width_balance`, `run_mid_side_mix_normalization`, `run_side_width_energy_test`.
   ‑ ✅ **A2** (RT60 reale + damping LF/MF/HF con clamp dinamico) — QA “Dynamic damping ≥ baseline” chiuso.
   ‑ ✅ **A3** **Vitalità HQ** (senza compromessi, orientata ad Apple Silicon).
 * **Fasi successive**: priorità **GPU (E)** → poi **Matrix v2/Detector (B)** → quindi **Quantum (C)** e **PrimeFear (D)**.

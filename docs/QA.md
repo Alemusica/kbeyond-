@@ -35,6 +35,10 @@
   Impulso **puro side** (L=+1, R=−1), width modulata lentamente in [0..2] (`test_side_impulse_width_balance`).
   **Energia L/R bilanciata** entro **±3%** sull’intera finestra (base M/S ortonormale + side-injection dedicata).
 
+- **Mix L/R statico**
+  `run_mid_side_mix_normalization` verifica che `mix_mid_side_to_lr` coincida con la proiezione dei vettori ortonormali (`mid` e
+  `side`) sugli output L/R senza modulazioni audio-rate.
+
 - **Motion/width (settling)**
   Per verificare crescita/ritorno della larghezza, usa **128 blocchi** di assestamento a ciascun livello di ampiezza (range/doppler con slew).
 
