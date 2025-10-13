@@ -244,8 +244,10 @@ void t_kbeyond::apply_width(double widthNorm) {
     widthNorm = clampd(widthNorm, 0.0, 2.0);
     double normL = 0.0;
     double normR = 0.0;
+    constexpr double midAttenuation = 3.0;
+    double midBalance = 1.0 / (1.0 + midAttenuation * widthNorm);
     for (int i = 0; i < N; ++i) {
-        double mid = outMidBasis[i];
+        double mid = outMidBasis[i] * midBalance;
         double side = outWeightsSide[i];
         double wL = mid + widthNorm * side;
         double wR = mid - widthNorm * side;
@@ -265,43 +267,23 @@ void t_kbeyond::apply_width(double widthNorm) {
 void t_kbeyond::mix_mid_side_to_lr(double tailMid, double tailSide, double widthNorm, double &outL, double &outR) const {
     widthNorm = clampd(widthNorm, 0.0, 2.0);
     constexpr double eps = 1.0e-12;
+    constexpr double midAttenuation = 3.0;
 
-    const double baseMid = 1.0;
+    const double baseMid = 1.0 / (1.0 + midAttenuation * widthNorm);
     const double baseSide = widthNorm;
 
-    const double absMid = std::abs(tailMid);
-    const double absSide = std::abs(tailSide);
-    const double ratio = absMid > eps ? absSide / absMid : (absSide > 0.0 ? 1.0e12 : 0.0);
-    constexpr double leakComp = 4.0;
-    const double comp = ratio > 1.0 ? 1.0 / (1.0 + leakComp * (ratio - 1.0)) : 1.0;
-
-    // Build an orthonormal pair of mixing vectors so |L|^2 + |R|^2 == |Mid|^2 + |Side|^2.
-    double lMid = baseMid * comp;
-    double lSide = baseSide;
-    double lNorm = std::hypot(lMid, lSide);
-    if (lNorm <= eps) {
+    double norm = std::hypot(baseMid, baseSide);
+    if (norm <= eps) {
         outL = tailMid;
         outR = tailMid;
         return;
     }
-    lMid /= lNorm;
-    lSide /= lNorm;
+    double inv = 1.0 / norm;
+    double lMid = baseMid * inv;
+    double lSide = baseSide * inv;
+    double rMid = baseMid * inv;
+    double rSide = -baseSide * inv;
 
-    double rMid = baseMid;
-    double rSide = -baseSide;
-    double dot = rMid * lMid + rSide * lSide;
-    rMid -= dot * lMid;
-    rSide -= dot * lSide;
-    double rNorm = std::hypot(rMid, rSide);
-    if (rNorm <= eps) {
-        rMid = -lSide;
-        rSide = lMid;
-    } else {
-        rMid /= rNorm;
-        rSide /= rNorm;
-    }
-
-    // The orthonormal basis ensures total energy is preserved when projecting back to L/R.
     outL = lMid * tailMid + lSide * tailSide;
     outR = rMid * tailMid + rSide * tailSide;
 }
@@ -938,6 +920,8 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
 
         double tailMid = 0.0;
         double tailSide = 0.0;
+        double tailL = 0.0;
+        double tailR = 0.0;
         kbeyond::dsp::write_feedback(x->fdnState,
                                      midIn,
                                      sideIn,
@@ -945,6 +929,8 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
                                      x->inWeights,
                                      x->outWeightsSide,
                                      x->outMidBasis,
+                                     x->outWeightsL,
+                                     x->outWeightsR,
                                      x->decayState.perLine,
                                      x->fdn_low,
                                      x->fdn_high,
@@ -952,11 +938,9 @@ void kbeyond_perform64(t_kbeyond *x, t_object *, double **ins, long nin, double 
                                      dampMFValue,
                                      dampHFValue,
                                      tailMid,
-                                     tailSide);
-
-        double tailL = 0.0;
-        double tailR = 0.0;
-        x->mix_mid_side_to_lr(tailMid, tailSide, widthNorm, tailL, tailR);
+                                     tailSide,
+                                     tailL,
+                                     tailR);
 
         double wetL = earlyL + tailL;
         double wetR = earlyR + tailR;

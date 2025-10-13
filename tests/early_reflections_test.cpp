@@ -554,6 +554,8 @@ DecayResponse measure_decay_response(double regenValue, double decayValue) {
 
         double tailMid = 0.0;
         double tailSide = 0.0;
+        double tailL = 0.0;
+        double tailR = 0.0;
         kbeyond::dsp::write_feedback(x.fdnState,
                                      midIn,
                                      sideIn,
@@ -561,6 +563,8 @@ DecayResponse measure_decay_response(double regenValue, double decayValue) {
                                      x.inWeights,
                                      x.outWeightsSide,
                                      x.outMidBasis,
+                                     x.outWeightsL,
+                                     x.outWeightsR,
                                      x.decayState.perLine,
                                      x.fdn_low,
                                      x.fdn_high,
@@ -568,11 +572,9 @@ DecayResponse measure_decay_response(double regenValue, double decayValue) {
                                      x.decayState.dampMF,
                                      x.decayState.dampHF,
                                      tailMid,
-                                     tailSide);
-
-        double tailL = 0.0;
-        double tailR = 0.0;
-        x.mix_mid_side_to_lr(tailMid, tailSide, widthNorm, tailL, tailR);
+                                     tailSide,
+                                     tailL,
+                                     tailR);
 
         double wetL = earlyL + tailL;
         double wetR = earlyR + tailR;
@@ -696,6 +698,8 @@ bool test_side_impulse_width_balance() {
 
         double tailMid = 0.0;
         double tailSide = 0.0;
+        double tailL = 0.0;
+        double tailR = 0.0;
         kbeyond::dsp::write_feedback(inst.fdnState,
                                      midIn,
                                      sideIn,
@@ -703,6 +707,8 @@ bool test_side_impulse_width_balance() {
                                      inst.inWeights,
                                      inst.outWeightsSide,
                                      inst.outMidBasis,
+                                     inst.outWeightsL,
+                                     inst.outWeightsR,
                                      inst.decayState.perLine,
                                      inst.fdn_low,
                                      inst.fdn_high,
@@ -710,10 +716,9 @@ bool test_side_impulse_width_balance() {
                                      dampMFValue,
                                      dampHFValue,
                                      tailMid,
-                                     tailSide);
-        double tailL = 0.0;
-        double tailR = 0.0;
-        inst.mix_mid_side_to_lr(tailMid, tailSide, widthVal, tailL, tailR);
+                                     tailSide,
+                                     tailL,
+                                     tailR);
         energyMid += tailMid * tailMid;
         energySide += tailSide * tailSide;
 

@@ -43,6 +43,8 @@ void apply_walsh_hadamard16_2d(const std::array<double, kFdnSize> &input,
                                std::array<double, kFdnSize> &output) {
     std::array<double, kFdnSize> tmp = input;
     constexpr std::size_t kSide = 4;
+    constexpr std::array<double, kSide> kRowPhase = {1.0, -1.0, 1.0, -1.0};
+    constexpr std::array<double, kSide> kColPhase = {1.0, 1.0, -1.0, -1.0};
 
     for (std::size_t row = 0; row < kSide; ++row) {
         std::size_t base = row * kSide;
@@ -51,6 +53,10 @@ void apply_walsh_hadamard16_2d(const std::array<double, kFdnSize> &input,
         double a2 = tmp[base + 2];
         double a3 = tmp[base + 3];
         hadamard4(a0, a1, a2, a3);
+        a0 *= kRowPhase[row];
+        a1 *= kRowPhase[row];
+        a2 *= kRowPhase[row];
+        a3 *= kRowPhase[row];
         tmp[base + 0] = a0;
         tmp[base + 1] = a1;
         tmp[base + 2] = a2;
@@ -62,6 +68,10 @@ void apply_walsh_hadamard16_2d(const std::array<double, kFdnSize> &input,
         double a1 = tmp[1 * kSide + col];
         double a2 = tmp[2 * kSide + col];
         double a3 = tmp[3 * kSide + col];
+        a0 *= kColPhase[col];
+        a1 *= kColPhase[col];
+        a2 *= kColPhase[col];
+        a3 *= kColPhase[col];
         hadamard4(a0, a1, a2, a3);
         tmp[0 * kSide + col] = a0;
         tmp[1 * kSide + col] = a1;
