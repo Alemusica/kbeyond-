@@ -262,30 +262,28 @@ void t_kbeyond::apply_width(double widthNorm) {
         outWeightsL[i] *= scaleL;
         outWeightsR[i] *= scaleR;
     }
+    double mixMidL = 0.0;
+    double mixSideL = 0.0;
+    double mixMidR = 0.0;
+    double mixSideR = 0.0;
+    for (int i = 0; i < N; ++i) {
+        double mid = outMidBasis[i];
+        double side = outWeightsSide[i];
+        mixMidL += outWeightsL[i] * mid;
+        mixSideL += outWeightsL[i] * side;
+        mixMidR += outWeightsR[i] * mid;
+        mixSideR += outWeightsR[i] * side;
+    }
+    widthApplied = widthNorm;
+    outMidToL = mixMidL;
+    outSideToL = mixSideL;
+    outMidToR = mixMidR;
+    outSideToR = mixSideR;
 }
 
-void t_kbeyond::mix_mid_side_to_lr(double tailMid, double tailSide, double widthNorm, double &outL, double &outR) const {
-    widthNorm = clampd(widthNorm, 0.0, 2.0);
-    constexpr double eps = 1.0e-12;
-    constexpr double midAttenuation = 3.0;
-
-    const double baseMid = 1.0 / (1.0 + midAttenuation * widthNorm);
-    const double baseSide = widthNorm;
-
-    double norm = std::hypot(baseMid, baseSide);
-    if (norm <= eps) {
-        outL = tailMid;
-        outR = tailMid;
-        return;
-    }
-    double inv = 1.0 / norm;
-    double lMid = baseMid * inv;
-    double lSide = baseSide * inv;
-    double rMid = baseMid * inv;
-    double rSide = -baseSide * inv;
-
-    outL = lMid * tailMid + lSide * tailSide;
-    outR = rMid * tailMid + rSide * tailSide;
+void t_kbeyond::mix_mid_side_to_lr(double tailMid, double tailSide, double &outL, double &outR) const {
+    outL = tailMid * outMidToL + tailSide * outSideToL;
+    outR = tailMid * outMidToR + tailSide * outSideToR;
 }
 
 void t_kbeyond::update_output_weights() {

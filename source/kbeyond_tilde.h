@@ -134,6 +134,11 @@ struct t_kbeyond {
     std::array<double, N> outWeightsSide {};
     std::array<double, N> outWeightsL {};
     std::array<double, N> outWeightsR {};
+    double widthApplied = kbeyond::dsp::AttributeDefaults::width;
+    double outMidToL = 0.0;
+    double outSideToL = 0.0;
+    double outMidToR = 0.0;
+    double outSideToR = 0.0;
 
     // Householder vector u (normalized)
     std::array<double, N> u {};
@@ -196,7 +201,7 @@ struct t_kbeyond {
     void update_injection_weights();
     void apply_width(double widthNorm);
     void update_output_basis();
-    void mix_mid_side_to_lr(double tailMid, double tailSide, double widthNorm, double &outL, double &outR) const;
+    void mix_mid_side_to_lr(double tailMid, double tailSide, double &outL, double &outR) const;
     std::vector<double> make_pattern(prime_modes::Pattern mode, std::size_t count, std::uint32_t salt) const;
 
 #ifdef KBEYOND_UNIT_TEST
