@@ -17,6 +17,15 @@
 
 ---
 
+## [2025-10-14] #002 — Mix L/R statico su base ortonormale
+- **Sintomi**: la coda wet sfarfallava sui preset wide; `mix_mid_side_to_lr` modulava a frequenza audio (ratio mid/side) con collassi istantanei e differenze marcate rispetto a kBeyond/Airwindows.
+- **Root cause**: i coefficienti L/R venivano ricombinati per-sample tramite `ratio = absSide/absMid`, ignorando i pesi normalizzati generati in `apply_width`; quando `mid` si avvicinava a zero il mix diventava instabile.
+- **Soluzione**: proiezione L/R statica: `apply_width` usa `(mid ± width*side)` rinormalizzato, salva i dot product Mid/Side↦L/R e `mix_mid_side_to_lr` li riutilizza senza dipendenze da ampiezze istantanee.
+- **File toccati**: `source/kbeyond_tilde.cpp`, `tests/motion_detector_test.cpp`, `docs/QA.md`, `docs/ROADMAP.md`.
+- **Commit**: (pending, branch `a-hardening/no-laser-2d`) — PR #TBD
+- **Verifica**: `run_mid_side_mix_normalization`, `test_side_impulse_width_balance`, `run_side_width_energy_test`.
+- **Note/rollback**: reintrodurre il mix dinamico ripristina il glitch stereo e il collapse della coda.
+
 ## [2025-10-13] #001 — Dynamic damping ≥ baseline
 - **Sintomi**: QA "Dynamic damping dropped below baseline" falliva quando il detector range/doppler riduceva l'energia wet, causando valori MF/HF < baseline.
 - **Root cause**: il calcolo dinamico di `dampMFValue/dampHFValue` non bloccava esplicitamente il minimo rispetto ai coefficienti calcolati in `update_decay`.

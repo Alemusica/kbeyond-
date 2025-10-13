@@ -155,7 +155,7 @@ bool run_mid_side_mix_normalization() {
 
     constexpr double width = 1.0;
     constexpr double eps = 1.0e-12;
-    auto apply_and_expect = [&](double widthNorm, double tailMid, double tailSide, double &expectedL, double &expectedR) {
+    auto apply_and_expect = [&](double widthNorm, double tailMid, double tailSide, double &expectedL, double &expectedR) -> bool {
         double clamped = std::max(0.0, std::min(widthNorm, 2.0));
         x.apply_width(clamped);
         double midCoeffL = 0.0;
@@ -170,8 +170,19 @@ bool run_mid_side_mix_normalization() {
             midCoeffR += x.outWeightsR[i] * mid;
             sideCoeffR += x.outWeightsR[i] * side;
         }
+        const double tol = 1.0e-9;
+        if (std::abs(x.outMidToL - midCoeffL) > tol || std::abs(x.outSideToL - sideCoeffL) > tol ||
+            std::abs(x.outMidToR - midCoeffR) > tol || std::abs(x.outSideToR - sideCoeffR) > tol) {
+            std::cerr << "Stored mid/side projection coefficients drifted from dot-product baseline" << std::endl;
+            std::cerr << "midToL diff=" << std::abs(x.outMidToL - midCoeffL)
+                      << " sideToL diff=" << std::abs(x.outSideToL - sideCoeffL)
+                      << " midToR diff=" << std::abs(x.outMidToR - midCoeffR)
+                      << " sideToR diff=" << std::abs(x.outSideToR - sideCoeffR) << std::endl;
+            return false;
+        }
         expectedL = tailMid * midCoeffL + tailSide * sideCoeffL;
         expectedR = tailMid * midCoeffR + tailSide * sideCoeffR;
+        return true;
     };
 
     {
@@ -182,7 +193,8 @@ bool run_mid_side_mix_normalization() {
         double outR = 0.0;
         double expectedL = 0.0;
         double expectedR = 0.0;
-        apply_and_expect(width, tailMid, tailSide, expectedL, expectedR);
+        if (!apply_and_expect(width, tailMid, tailSide, expectedL, expectedR))
+            return false;
         x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
 
         const double errL = std::abs(outL - expectedL);
@@ -202,7 +214,8 @@ bool run_mid_side_mix_normalization() {
         double outR = 0.0;
         double expectedL = 0.0;
         double expectedR = 0.0;
-        apply_and_expect(width, tailMid, tailSide, expectedL, expectedR);
+        if (!apply_and_expect(width, tailMid, tailSide, expectedL, expectedR))
+            return false;
         x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
         const double outputEnergy = outL * outL + outR * outR;
         const double expectedEnergy = expectedL * expectedL + expectedR * expectedR;
@@ -234,7 +247,8 @@ bool run_mid_side_mix_normalization() {
             double outR = 0.0;
             double expectedL = 0.0;
             double expectedR = 0.0;
-            apply_and_expect(widthNorm, tailMid, tailSide, expectedL, expectedR);
+            if (!apply_and_expect(widthNorm, tailMid, tailSide, expectedL, expectedR))
+                return false;
             x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
 
             const double errL = std::abs(outL - expectedL);
@@ -283,20 +297,9 @@ bool run_width_projection_energy_sweep() {
         x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
 
         double energy = outL * outL + outR * outR;
-        double clampedWidth = std::max(0.0, std::min(widthValue, 2.0));
-        double baseMid = 1.0 / (1.0 + 3.0 * clampedWidth);
-        double baseSide = clampedWidth;
-        double norm = std::hypot(baseMid, baseSide);
-        double expectedEnergy = 0.0;
-        if (norm <= 1.0e-12) {
-            expectedEnergy = tailMid * tailMid;
-        } else {
-            double mixMid = baseMid / norm;
-            double mixSide = baseSide / norm;
-            double expectedL = mixMid * tailMid + mixSide * tailSide;
-            double expectedR = mixMid * tailMid - mixSide * tailSide;
-            expectedEnergy = expectedL * expectedL + expectedR * expectedR;
-        }
+        double expectedL = tailMid * x.outMidToL + tailSide * x.outSideToL;
+        double expectedR = tailMid * x.outMidToR + tailSide * x.outSideToR;
+        double expectedEnergy = expectedL * expectedL + expectedR * expectedR;
         maxEnergyError = std::max(maxEnergyError, std::abs(energy - expectedEnergy));
 
         std::array<double, t_kbeyond::N> fdnVec{};
