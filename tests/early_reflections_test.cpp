@@ -16,6 +16,7 @@ namespace motion_tests {
 bool run_motion_width_response();
 bool run_motion_moddepth_response();
 bool run_mid_side_mix_normalization();
+bool run_width_projection_energy_sweep();
 }
 
 namespace {
@@ -1076,5 +1077,7 @@ int main() {
         return 10;
     if (!motion_tests::run_mid_side_mix_normalization())
         return 11;
+    if (!motion_tests::run_width_projection_energy_sweep())
+        return 13;
     return 0;
 }

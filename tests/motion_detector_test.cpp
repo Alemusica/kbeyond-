@@ -151,27 +151,27 @@ bool run_motion_moddepth_response() {
 
 bool run_mid_side_mix_normalization() {
     t_kbeyond x{};
+    x.setup_sr(48000.0);
 
     constexpr double width = 1.0;
     constexpr double eps = 1.0e-12;
-    auto expected_mix = [](double tailMid, double tailSide, double widthNorm, double &expectedL, double &expectedR) {
-        constexpr double midAttenuation = 3.0;
-        constexpr double localEps = 1.0e-12;
-        double widthClamped = std::max(0.0, std::min(widthNorm, 2.0));
-        double baseMid = 1.0 / (1.0 + midAttenuation * widthClamped);
-        double baseSide = widthClamped;
-        double norm = std::hypot(baseMid, baseSide);
-        if (norm <= localEps) {
-            expectedL = tailMid;
-            expectedR = tailMid;
-            return;
+    auto apply_and_expect = [&](double widthNorm, double tailMid, double tailSide, double &expectedL, double &expectedR) {
+        double clamped = std::max(0.0, std::min(widthNorm, 2.0));
+        x.apply_width(clamped);
+        double midCoeffL = 0.0;
+        double sideCoeffL = 0.0;
+        double midCoeffR = 0.0;
+        double sideCoeffR = 0.0;
+        for (int i = 0; i < t_kbeyond::N; ++i) {
+            double mid = x.outMidBasis[i];
+            double side = x.outWeightsSide[i];
+            midCoeffL += x.outWeightsL[i] * mid;
+            sideCoeffL += x.outWeightsL[i] * side;
+            midCoeffR += x.outWeightsR[i] * mid;
+            sideCoeffR += x.outWeightsR[i] * side;
         }
-        double lMid = baseMid / norm;
-        double lSide = baseSide / norm;
-        double rMid = baseMid / norm;
-        double rSide = -baseSide / norm;
-        expectedL = lMid * tailMid + lSide * tailSide;
-        expectedR = rMid * tailMid + rSide * tailSide;
+        expectedL = tailMid * midCoeffL + tailSide * sideCoeffL;
+        expectedR = tailMid * midCoeffR + tailSide * sideCoeffR;
     };
 
     {
@@ -180,11 +180,10 @@ bool run_mid_side_mix_normalization() {
 
         double outL = 0.0;
         double outR = 0.0;
-        x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
-
         double expectedL = 0.0;
         double expectedR = 0.0;
-        expected_mix(tailMid, tailSide, width, expectedL, expectedR);
+        apply_and_expect(width, tailMid, tailSide, expectedL, expectedR);
+        x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
 
         const double errL = std::abs(outL - expectedL);
         const double errR = std::abs(outR - expectedR);
@@ -201,12 +200,11 @@ bool run_mid_side_mix_normalization() {
 
         double outL = 0.0;
         double outR = 0.0;
-        x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
-
-        const double outputEnergy = outL * outL + outR * outR;
         double expectedL = 0.0;
         double expectedR = 0.0;
-        expected_mix(tailMid, tailSide, width, expectedL, expectedR);
+        apply_and_expect(width, tailMid, tailSide, expectedL, expectedR);
+        x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
+        const double outputEnergy = outL * outL + outR * outR;
         const double expectedEnergy = expectedL * expectedL + expectedR * expectedR;
         const double energyDiffDb = 10.0 * std::log10((outputEnergy + eps) / (expectedEnergy + eps));
         if (std::abs(energyDiffDb) > 1.0e-6) {
@@ -234,11 +232,10 @@ bool run_mid_side_mix_normalization() {
         for (double widthNorm : widths) {
             double outL = 0.0;
             double outR = 0.0;
-            x.mix_mid_side_to_lr(tailMid, tailSide, widthNorm, outL, outR);
-
             double expectedL = 0.0;
             double expectedR = 0.0;
-            expected_mix(tailMid, tailSide, widthNorm, expectedL, expectedR);
+            apply_and_expect(widthNorm, tailMid, tailSide, expectedL, expectedR);
+            x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
 
             const double errL = std::abs(outL - expectedL);
             const double errR = std::abs(outR - expectedR);
@@ -260,6 +257,86 @@ bool run_mid_side_mix_normalization() {
                 return false;
             }
         }
+    }
+
+    return true;
+}
+
+bool run_width_projection_energy_sweep() {
+    t_kbeyond x{};
+    x.setup_sr(48000.0);
+
+    const double tailMid = 0.6;
+    const double tailSide = 0.4;
+    const int steps = 256;
+    double maxEnergyError = 0.0;
+    double maxStereoImbalance = 0.0;
+
+    for (int i = 0; i < steps; ++i) {
+        double phase = static_cast<double>(i) / static_cast<double>(steps);
+        double widthValue = 1.0 + std::sin(phase * 8.0 * M_PI);
+        widthValue = std::max(0.0, std::min(widthValue, 2.0));
+        x.apply_width(widthValue);
+
+        double outL = 0.0;
+        double outR = 0.0;
+        x.mix_mid_side_to_lr(tailMid, tailSide, outL, outR);
+
+        double energy = outL * outL + outR * outR;
+        double clampedWidth = std::max(0.0, std::min(widthValue, 2.0));
+        double baseMid = 1.0 / (1.0 + 3.0 * clampedWidth);
+        double baseSide = clampedWidth;
+        double norm = std::hypot(baseMid, baseSide);
+        double expectedEnergy = 0.0;
+        if (norm <= 1.0e-12) {
+            expectedEnergy = tailMid * tailMid;
+        } else {
+            double mixMid = baseMid / norm;
+            double mixSide = baseSide / norm;
+            double expectedL = mixMid * tailMid + mixSide * tailSide;
+            double expectedR = mixMid * tailMid - mixSide * tailSide;
+            expectedEnergy = expectedL * expectedL + expectedR * expectedR;
+        }
+        maxEnergyError = std::max(maxEnergyError, std::abs(energy - expectedEnergy));
+
+        std::array<double, t_kbeyond::N> fdnVec{};
+        for (int n = 0; n < t_kbeyond::N; ++n)
+            fdnVec[n] = tailMid * x.outMidBasis[n] + tailSide * x.outWeightsSide[n];
+
+        double directL = 0.0;
+        double directR = 0.0;
+        for (int n = 0; n < t_kbeyond::N; ++n) {
+            directL += fdnVec[n] * x.outWeightsL[n];
+            directR += fdnVec[n] * x.outWeightsR[n];
+        }
+
+        if (std::abs(directL - outL) > 1.0e-12 || std::abs(directR - outR) > 1.0e-12) {
+            std::cerr << "Direct projection mismatch under width sweep" << std::endl;
+            return false;
+        }
+
+        double sideL = 0.0;
+        double sideR = 0.0;
+        x.mix_mid_side_to_lr(0.0, 1.0, sideL, sideR);
+        double sideEnergyDiff = std::abs(sideL * sideL - sideR * sideR);
+        maxStereoImbalance = std::max(maxStereoImbalance, sideEnergyDiff);
+
+        double energyL = weights_energy(x.outWeightsL);
+        double energyR = weights_energy(x.outWeightsR);
+        if (std::abs(energyL - 1.0) > 1.0e-9 || std::abs(energyR - 1.0) > 1.0e-9) {
+            std::cerr << "Width sweep broke unit-energy constraint: L=" << energyL << " R=" << energyR
+                      << std::endl;
+            return false;
+        }
+    }
+
+    if (maxEnergyError > 1.0e-9) {
+        std::cerr << "Width sweep energy deviated from analytic expectation: error=" << maxEnergyError << std::endl;
+        return false;
+    }
+    if (maxStereoImbalance > 1.0e-9) {
+        std::cerr << "Width sweep broke stereo balance: imbalance=" << maxStereoImbalance << std::endl;
+        return false;
     }
 
     return true;
