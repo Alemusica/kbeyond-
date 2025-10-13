@@ -153,8 +153,26 @@ bool run_mid_side_mix_normalization() {
     t_kbeyond x{};
 
     constexpr double width = 1.0;
-    constexpr double invSqrt2 = 1.0 / std::sqrt(2.0);
     constexpr double eps = 1.0e-12;
+    auto expected_mix = [](double tailMid, double tailSide, double widthNorm, double &expectedL, double &expectedR) {
+        constexpr double midAttenuation = 3.0;
+        constexpr double localEps = 1.0e-12;
+        double widthClamped = std::max(0.0, std::min(widthNorm, 2.0));
+        double baseMid = 1.0 / (1.0 + midAttenuation * widthClamped);
+        double baseSide = widthClamped;
+        double norm = std::hypot(baseMid, baseSide);
+        if (norm <= localEps) {
+            expectedL = tailMid;
+            expectedR = tailMid;
+            return;
+        }
+        double lMid = baseMid / norm;
+        double lSide = baseSide / norm;
+        double rMid = baseMid / norm;
+        double rSide = -baseSide / norm;
+        expectedL = lMid * tailMid + lSide * tailSide;
+        expectedR = rMid * tailMid + rSide * tailSide;
+    };
 
     {
         const double tailMid = 1.0;
@@ -164,8 +182,9 @@ bool run_mid_side_mix_normalization() {
         double outR = 0.0;
         x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
 
-        const double expectedL = (tailMid + width * tailSide) * invSqrt2;
-        const double expectedR = (tailMid - width * tailSide) * invSqrt2;
+        double expectedL = 0.0;
+        double expectedR = 0.0;
+        expected_mix(tailMid, tailSide, width, expectedL, expectedR);
 
         const double errL = std::abs(outL - expectedL);
         const double errR = std::abs(outR - expectedR);
@@ -184,16 +203,19 @@ bool run_mid_side_mix_normalization() {
         double outR = 0.0;
         x.mix_mid_side_to_lr(tailMid, tailSide, width, outL, outR);
 
-        const double inputEnergy = tailMid * tailMid + tailSide * tailSide;
         const double outputEnergy = outL * outL + outR * outR;
-        const double energyDiffDb = 10.0 * std::log10((outputEnergy + eps) / (inputEnergy + eps));
+        double expectedL = 0.0;
+        double expectedR = 0.0;
+        expected_mix(tailMid, tailSide, width, expectedL, expectedR);
+        const double expectedEnergy = expectedL * expectedL + expectedR * expectedR;
+        const double energyDiffDb = 10.0 * std::log10((outputEnergy + eps) / (expectedEnergy + eps));
         if (std::abs(energyDiffDb) > 1.0e-6) {
-            std::cerr << "Mid/side mix lost energy under leak compensation by " << energyDiffDb
+            std::cerr << "Mid/side mix deviated from expected energy by " << energyDiffDb
                       << " dB" << std::endl;
             return false;
         }
 
-        const double rmsExpected = std::sqrt(0.5 * inputEnergy);
+        const double rmsExpected = std::sqrt(0.5 * expectedEnergy);
         const double rmsActual = std::sqrt(0.5 * outputEnergy);
         const double rmsDiffDb = 20.0 * std::log10((rmsActual + eps) / (rmsExpected + eps));
         if (std::abs(rmsDiffDb) > 1.0e-6) {
@@ -207,47 +229,7 @@ bool run_mid_side_mix_normalization() {
         const double tailMid = 0.1;
         const double tailSide = 0.8;
         const std::array<double, 3> widths{0.5, 1.0, 2.0};
-        constexpr double eps = 1.0e-12;
-        constexpr double leakComp = 4.0;
-
-        auto compute_expected = [&](double widthNorm, double &expectedL, double &expectedR) {
-            const double widthClamped = std::max(0.0, std::min(widthNorm, 2.0));
-            const double baseMid = 1.0;
-            const double baseSide = widthClamped;
-
-            const double absMid = std::abs(tailMid);
-            const double absSide = std::abs(tailSide);
-            const double ratio = absMid > eps ? absSide / absMid : (absSide > 0.0 ? 1.0e12 : 0.0);
-            const double comp = ratio > 1.0 ? 1.0 / (1.0 + leakComp * (ratio - 1.0)) : 1.0;
-
-            double lMid = baseMid * comp;
-            double lSide = baseSide;
-            double lNorm = std::hypot(lMid, lSide);
-            if (lNorm <= eps) {
-                expectedL = tailMid;
-                expectedR = tailMid;
-                return;
-            }
-            lMid /= lNorm;
-            lSide /= lNorm;
-
-            double rMid = baseMid;
-            double rSide = -baseSide;
-            double dot = rMid * lMid + rSide * lSide;
-            rMid -= dot * lMid;
-            rSide -= dot * lSide;
-            double rNorm = std::hypot(rMid, rSide);
-            if (rNorm <= eps) {
-                rMid = -lSide;
-                rSide = lMid;
-            } else {
-                rMid /= rNorm;
-                rSide /= rNorm;
-            }
-
-            expectedL = lMid * tailMid + lSide * tailSide;
-            expectedR = rMid * tailMid + rSide * tailSide;
-        };
+        constexpr double leakEps = 1.0e-12;
 
         for (double widthNorm : widths) {
             double outL = 0.0;
@@ -256,7 +238,7 @@ bool run_mid_side_mix_normalization() {
 
             double expectedL = 0.0;
             double expectedR = 0.0;
-            compute_expected(widthNorm, expectedL, expectedR);
+            expected_mix(tailMid, tailSide, widthNorm, expectedL, expectedR);
 
             const double errL = std::abs(outL - expectedL);
             const double errR = std::abs(outR - expectedR);
@@ -270,8 +252,8 @@ bool run_mid_side_mix_normalization() {
             const double expectedEnergyR = expectedR * expectedR;
             const double energyL = outL * outL;
             const double energyR = outR * outR;
-            const double rmsDiffLdB = 10.0 * std::log10((energyL + eps) / (expectedEnergyL + eps));
-            const double rmsDiffRdB = 10.0 * std::log10((energyR + eps) / (expectedEnergyR + eps));
+            const double rmsDiffLdB = 10.0 * std::log10((energyL + leakEps) / (expectedEnergyL + leakEps));
+            const double rmsDiffRdB = 10.0 * std::log10((energyR + leakEps) / (expectedEnergyR + leakEps));
             if (std::abs(rmsDiffLdB) > 1.0e-9 || std::abs(rmsDiffRdB) > 1.0e-9) {
                 std::cerr << "Mid/side mix per-channel RMS deviated beyond tolerance at width=" << widthNorm
                           << ": L diff=" << rmsDiffLdB << " dB R diff=" << rmsDiffRdB << " dB" << std::endl;

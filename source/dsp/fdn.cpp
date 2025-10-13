@@ -162,6 +162,8 @@ void write_feedback(FdnState &state,
                     const std::array<double, kFdnSize> &inWeights,
                     const std::array<double, kFdnSize> &sideWeights,
                     const std::array<double, kFdnSize> &midWeights,
+                    const std::array<double, kFdnSize> &outWeightsL,
+                    const std::array<double, kFdnSize> &outWeightsR,
                     const std::array<double, kFdnSize> &decay,
                     std::array<filters::OnePoleLP, kFdnSize> &low,
                     std::array<filters::OnePoleLP, kFdnSize> &high,
@@ -169,9 +171,13 @@ void write_feedback(FdnState &state,
                     double dampMF,
                     double dampHF,
                     double &tailMid,
-                    double &tailSide) {
+                    double &tailSide,
+                    double &tailL,
+                    double &tailR) {
     tailMid = 0.0;
     tailSide = 0.0;
+    tailL = 0.0;
+    tailR = 0.0;
     for (int l = 0; l < static_cast<int>(kFdnSize); ++l) {
         const double fb = state.feedback[static_cast<std::size_t>(l)];
         const double lowBand = low[static_cast<std::size_t>(l)].process(fb);
@@ -186,7 +192,10 @@ void write_feedback(FdnState &state,
         const double output = state.outputs[static_cast<std::size_t>(l)];
         tailMid += output * midWeights[static_cast<std::size_t>(l)];
         tailSide += output * sideWeights[static_cast<std::size_t>(l)];
+        tailL += output * outWeightsL[static_cast<std::size_t>(l)];
+        tailR += output * outWeightsR[static_cast<std::size_t>(l)];
     }
+
 }
 
 } // namespace kbeyond::dsp
